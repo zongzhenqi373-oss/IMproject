@@ -1,0 +1,33 @@
+# 编译产物
+*.obj
+*.o
+*.tlog
+*.ipch
+*.pdb
+*.ilk
+*.exe
+*.dll
+*.lib
+
+# Qt 生成文件
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+Makefile
+*.pro.user
+
+# Visual Studio
+.vs/
+*.suo
+*.ncb
+Debug/
+Release/
+x64/
+
+# 系统文件
+Thumbs.db
+Desktop.ini
+
+# IDE
+.idea/
+.vscode/

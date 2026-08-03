@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+
+# 压缩包
+*.zip
+
+# WorkBuddy 项目数据
+.workbuddy/
+
+# Qt 编译产物
+*.pro.user
+moc_*
+ui_*.h
+qrc_*.cpp
+Makefile
+*.o
+*.obj
+
+# VS 编译产物
+Debug/
+Release/
+x64/
+x86/
+.vs/
+*.vcxproj.user
+*.suo
+*.sdf
+*.opensdf
+*.log
+*.tlog
