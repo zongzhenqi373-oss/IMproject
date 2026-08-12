@@ -1,6 +1,7 @@
 #include "chatdig.h"
 #include "ui_chatdig.h"
 #include<QMessageBox>
+#include<QDebug>
 #include<QTime>
 
 

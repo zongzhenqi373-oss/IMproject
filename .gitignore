@@ -8,6 +8,7 @@
 .workbuddy/
 
 # Qt 编译产物
+build-*/
 *.pro.user
 moc_*
 ui_*.h
