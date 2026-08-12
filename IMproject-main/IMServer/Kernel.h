@@ -2,9 +2,11 @@
 #include<iostream>
 #include<map>
 #include<mutex>
+#include<string>
 #include"mediator/INetmediator.h"
 #include"net/def.h"
 #include"MySQL/CMySql.h"
+#include"im.pb.h"
 
 
 using namespace std;
@@ -16,68 +18,71 @@ public:
 	Kernel();
 	~Kernel();
 
-	//³õÊ¼»¯º¯ÊıÖ¸ÕëÊı×é
+	//åˆå§‹åŒ–å‡½æ•°æŒ‡é’ˆæ•°ç»„
 	void setFunArr();
 
-	//´ò¿ª·şÎñÆ÷
+	//æ‰“å¼€æœåŠ¡å™¨
 	bool startServer();
-	//¹Ø±Õ·şÎñÆ÷
+	//å…³é—­æœåŠ¡å™¨
 	void closeServer();
 
-	//´¦ÀíºÍ·Ö·¢ËùÓĞÊÕµ½µÄÊı¾İ
+	//å¤„ç†å’Œåˆ†å‘æ‰€æœ‰æ”¶åˆ°çš„æ•°æ®
 	void DealData(char* data, int len, unsigned long from);
 
-	//´¦Àí×¢²áÇëÇóµÄº¯Êı
+	//å¤„ç†æ³¨å†Œè¯·æ±‚çš„å‡½æ•°
 	void DealRegisterRq(char* data, int len, unsigned long from);
 
-	//´¦ÀíµÇÂ¼ÇëÇóµÄº¯Êı
+	//å¤„ç†ç™»å½•è¯·æ±‚çš„å‡½æ•°
 	void DealLoginRq(char* data, int len, unsigned long from);
 
-	//¸ù¾İid²éÑ¯µ±Ç°ÓÃ»§ÒÔ¼°ºÃÓÑµÄĞÅÏ¢
+	//æ ¹æ®idæŸ¥è¯¢å½“å‰ç”¨æˆ·ä»¥åŠå¥½å‹çš„ä¿¡æ¯
 	void getUserInfoAndFriendInfo(int id);
 
-	//¸ù¾İid²éÑ¯ÓÃ»§ĞÅÏ¢
-	void getInfoById(int id, PROT_FRIEND_INFO* info);
+	//æ ¹æ®idæŸ¥è¯¢ç”¨æˆ·ä¿¡æ¯ï¼ˆå¡«å…… pb æ¶ˆæ¯ï¼‰
+	void getInfoById(int id, im::proto::FriendInfo* info);
 
-	//ÀëÏßÏûÏ¢·¢ËÍ
+	//ç»„è£…å¹¶å‘é€ä¸€ä¸ªå®Œæ•´åŒ…ä½“ï¼š4B å°ç«¯åè®®å· + pb payload
+	void sendPacket(protType type, const std::string& payload, unsigned long to);
+
+	//ç¦»çº¿æ¶ˆæ¯å‘é€
 	void sendOfflinemsg(int id);
 
-	//´¦ÀíÏÂÏßÇëÇó
+	//å¤„ç†ä¸‹çº¿è¯·æ±‚
 	void DealOfflineRq(char* data, int len, unsigned long from);
 
-	//´¦ÀíÁÄÌìÇëÇó
+	//å¤„ç†èŠå¤©è¯·æ±‚
 	void DealChatRq(char* data, int len, unsigned long from);
 
-	//´¦ÀíÌí¼ÓºÃÓÑÇëÇó
+	//å¤„ç†æ·»åŠ å¥½å‹è¯·æ±‚
 	void DealAddFriendRq(char* data, int len, unsigned long from);
 
-	//´¦ÀíÌí¼ÓºÃÓÑ»Ø¸´
+	//å¤„ç†æ·»åŠ å¥½å‹å›å¤
 	void DealAddFriendRs(char* data, int len, unsigned long from);
 
 
 private:
 	INetmediator* m_pMediator;
-	//¶¨Òåº¯ÊıÖ¸Õë
+	//å®šä¹‰å‡½æ•°æŒ‡é’ˆ
 	using DEAL_FUN = void(Kernel::*)(char*, int, unsigned long);
-	//º¯ÊıÖ¸ÕëÊı×é
+	//å‡½æ•°æŒ‡é’ˆæ•°ç»„
 	DEAL_FUN m_dealFunArr[DEF_PROT_COUNT];
 
-	//Êı¾İ¿â¶ÔÏó
+	//æ•°æ®åº“å¯¹è±¡
 	CMySql m_mysql;
 	map<int, unsigned long> m_mapIdtoSocket;
 
-	//±£»¤ m_mapIdtoSocket µÄ²¢·¢·ÃÎÊ£¨recvThread ÔÚ²»Í¬Á¬½ÓµÄÏß³ÌÖĞ²¢·¢µ÷ÓÃ DealData£©
-	//½×¶Î-1 ½ö¼ÓËøÏû³ıÊı¾İ¾ºÕù£»worker Ïß³Ì³ØÍÆ³Ùµ½½×¶Î0Óë asio ÖØĞ´ºÏ²¢
+	//ä¿æŠ¤ m_mapIdtoSocket çš„å¹¶å‘è®¿é—®ï¼ˆrecvThread åœ¨ä¸åŒè¿æ¥çš„çº¿ç¨‹ä¸­å¹¶å‘è°ƒç”¨ DealDataï¼‰
+	//é˜¶æ®µ-1 ä»…åŠ é”æ¶ˆé™¤æ•°æ®ç«äº‰ï¼›worker çº¿ç¨‹æ± æ¨è¿Ÿåˆ°é˜¶æ®µ0ä¸ asio é‡å†™åˆå¹¶
 	mutex m_mapIdtoSocketMutex;
 
-	//m_mapIdtoSocket µÄ¼ÓËø¸¨Öú·½·¨£¨ËøÄÚ²éÑ¯/ĞŞ¸Ä£¬ËøÍâÊ¹ÓÃ£¬±ÜÃâ³ÖËøµ÷ÓÃ sendData£©
-	//»ñÈ¡ id ¶ÔÓ¦µÄ socket£¬´æÔÚÔò·µ»Ø true ²¢Ğ´Èë out
+	//m_mapIdtoSocket çš„åŠ é”è¾…åŠ©æ–¹æ³•ï¼ˆé”å†…æŸ¥è¯¢/ä¿®æ”¹ï¼Œé”å¤–ä½¿ç”¨ï¼Œé¿å…æŒé”è°ƒç”¨ sendDataï¼‰
+	//è·å– id å¯¹åº”çš„ socketï¼Œå­˜åœ¨åˆ™è¿”å› true å¹¶å†™å…¥ out
 	bool getSocket(int id, unsigned long& out);
-	//ÉèÖÃ id ¡ú socket Ó³Éä
+	//è®¾ç½® id â†’ socket æ˜ å°„
 	void setSocket(int id, unsigned long sock);
-	//ÅĞ¶Ï id ÊÇ·ñÔÚÏß£¨´æÔÚÓ³Éä£©
+	//åˆ¤æ–­ id æ˜¯å¦åœ¨çº¿ï¼ˆå­˜åœ¨æ˜ å°„ï¼‰
 	bool isOnline(int id);
-	//É¾³ı id µÄÓ³Éä£¬²¢·µ»Ø±»É¾³ıµÄ socket£¨ÓÃÓÚºóĞø closesocket£©
+	//åˆ é™¤ id çš„æ˜ å°„ï¼Œå¹¶è¿”å›è¢«åˆ é™¤çš„ socketï¼ˆç”¨äºåç»­ closesocketï¼‰
 	bool eraseSocket(int id, unsigned long& outSock);
 };
 

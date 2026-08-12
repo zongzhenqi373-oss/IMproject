@@ -1,72 +1,89 @@
 #ifndef KERNAL_H
 #define KERNAL_H
 
-#define WIN32_LEAN_AND_MEAN      // 避免包含太多 Windows 头
-#define NOMINMAX                 // 避免 min/max 宏污染
-
-// 临时屏蔽 rpcndr.h 的 byte 定义
-#ifdef byte
-#undef byte
-#endif
-typedef unsigned char rpc_byte;  // 若确实需要，可自己另定义
-
 #include <QObject>
-#include<QTimer>
-#include"logindia.h"
-#include"mainwdiget.h"
-#include"./mediator/INetmediator.h"
+#include <QString>
+#include "logindia.h"
+#include "mainwdiget.h"
+#include "client_core/ClientCore.h"
 
-class Kernal : public QObject
+// 阶段0：kernal 重写为 client_core 的 Qt 适配层
+// - 网络/协议/业务逻辑全部下沉到 im::ClientCore（纯 C++，可跨端复用）
+// - 本类只做两件事：
+//   1) UI 信号 → ClientCore 业务方法（槽函数）
+//   2) ClientCore 回调（asio 网络线程）→ Qt 信号 → 排队到 UI 线程更新界面
+// - 已删除：三个模拟服务端的测试定时器、net/mediator 层（由 client_core 内部 asio 取代）
+class Kernal : public QObject, public im::IClientEvents
 {
     Q_OBJECT
 public:
     explicit Kernal(QObject *parent = nullptr);
+    ~Kernal() override;
 
-    //阶段-1：全链路统一 UTF-8，已删除 utf8ToGb2312/gb2312ToUtf8 互转
-    //客户端直接用 QString::toUtf8() 写入 struct，QString::fromUtf8() 读出
+    // ---------------- im::IClientEvents（asio 网络线程触发，仅转发为 Qt 信号） ----------------
+    void onRegisterResult(int result) override { emit sig_registerResult(result); }
+    void onLoginResult(int result, int userId) override { emit sig_loginResult(result, userId); }
+    void onSelfInfo(const im::UserInfo& info) override {
+        emit sig_selfInfo(info.iconId, QString::fromUtf8(info.nick), QString::fromUtf8(info.feeling));
+    }
+    void onFriendInfo(const im::FriendInfo& info) override {
+        emit sig_friendInfo(info.id, info.iconId, info.status,
+                            QString::fromUtf8(info.nick), QString::fromUtf8(info.feeling));
+    }
+    void onChatMessage(int fromId, const std::string& msg) override {
+        emit sig_chatMessage(fromId, QString::fromUtf8(msg));
+    }
+    void onChatSendResult(int friId, int result) override { emit sig_chatSendResult(friId, result); }
+    void onAddFriendRequest(int fromId, const std::string& fromNick) override {
+        emit sig_addFriendRequest(fromId, QString::fromUtf8(fromNick));
+    }
+    void onAddFriendResult(int result, const std::string& destNick) override {
+        emit sig_addFriendResult(result, QString::fromUtf8(destNick));
+    }
+    void onFriendOffline(int userId) override { emit sig_friendOffline(userId); }
+    void onConnectionClosed() override { emit sig_connectionClosed(); }
 
 signals:
-    void signals_responce_ClientData(char*,int ,unsigned long );
+    // core 事件 → UI 线程（queued）
+    void sig_registerResult(int result);
+    void sig_loginResult(int result, int userId);
+    void sig_selfInfo(int iconId, QString nick, QString feeling);
+    void sig_friendInfo(int friId, int iconId, int status, QString nick, QString feeling);
+    void sig_chatMessage(int fromId, QString msg);
+    void sig_chatSendResult(int friId, int result);
+    void sig_addFriendRequest(int fromId, QString fromNick);
+    void sig_addFriendResult(int result, QString destNick);
+    void sig_friendOffline(int userId);
+    void sig_connectionClosed();
 
 public slots:
-    void slots_sendRegisterToServe(QString,QString,QString);
-    void slots_sendLoginToServe(QString,QString);
-    void slots_recvServerData(char*,int,unsigned long);
-    void slots_updateFriInfo();   //定时器触发，定时更新朋友信息
-    void slots_sendMsgtoServe(QString,int);
-    void slots_addFriend(QString);
-    void slots_addFriendTimer();   //定时器触发，模拟ccc上线后添加张三
-    void slots_FriofflineTimer();   //模拟朋友下线
-    void slots_sendMyoffline();   //给服务端发送下线的通知
-    void slots_quitLogin();  //退出登录
+    // ---------------- UI 请求 → ClientCore（原 UI 信号对应的槽，签名保持不变） ----------------
+    void slots_sendRegisterToServe(QString nick, QString tel, QString pass);
+    void slots_sendLoginToServe(QString tel, QString pass);
+    void slots_sendMsgtoServe(QString msg, int friid);
+    void slots_addFriend(QString nick);
+    void slots_sendMyoffline();
+    void slots_quitLogin();
 
+private slots:
+    // ---------------- core 事件的 UI 线程处理（原 deal_xxx 逻辑） ----------------
+    void onRegisterResultUi(int result);
+    void onLoginResultUi(int result, int userId);
+    void onSelfInfoUi(int iconId, QString nick, QString feeling);
+    void onFriendInfoUi(int friId, int iconId, int status, QString nick, QString feeling);
+    void onChatMessageUi(int fromId, QString msg);
+    void onChatSendResultUi(int friId, int result);
+    void onAddFriendRequestUi(int fromId, QString fromNick);
+    void onAddFriendResultUi(int result, QString destNick);
+    void onFriendOfflineUi(int userId);
+    void onConnectionClosedUi();
 
-public:
-    LoginDia*m_pLogin;
+private:
+    void destroyUi();
+
+    LoginDia* m_pLogin;
     mainwdiget* m_Mainwdiget;
-    INetmediator* m_pMediator;
-
-
-    using DEAL_FUN = void(Kernal::*)(char*,int ,unsigned long );
-    DEAL_FUN m_dealFunArr[30];
-
-public:
-    void deal_registerRs(char*,int,unsigned long);
-    void deal_loginRs(char*,int,unsigned long);
-    void deal_friendInfo(char*,int,unsigned long);
-    void deal_chatInfoRs(char*,int,unsigned long);
-    void deal_chatInfoRq(char*,int,unsigned long);
-    void deal_addFriRs(char*,int,unsigned long);
-    void deal_addFriRq(char*,int,unsigned long);
-    void deal_Frioffline(char*,int,unsigned long);
-
-public:
-    QTimer*m_pUpateFriTimer;   //定时更新朋友信息
-    QTimer*m_pAddFriendTimer;   //模拟ccc上线后，添加张三为好友
-    QTimer*m_pFriofflineTimer;  //朋友下线1定时器
-
-
-
+    im::ClientCore m_core;
 };
 
 #endif // KERNAL_H

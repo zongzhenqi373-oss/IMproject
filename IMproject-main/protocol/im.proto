@@ -1,0 +1,79 @@
+// IM 通信协议定义（proto3）
+// 线格式：[4B 大端包长][4B 协议类型(小端 protType)][protobuf payload]
+// 协议类型常量见 client_core/include/client_core/Protocol.h（与服务端 def.h 一致）
+//
+// 重新生成 C++ 代码（生成物提交于 protocol/generated/，供 CMake/VS/qmake 共用）：
+//   protoc --cpp_out=generated im.proto
+// 注意：protoc 主版本需与各端链接的 protobuf 运行时主版本一致。
+
+syntax = "proto3";
+
+package im.proto;
+
+// ---------------- 注册 ----------------
+message RegisterRq {
+  string nick = 1;  // UTF-8，上限见 proto::USER_NICK_LEN
+  string tel = 2;
+  string pass = 3;
+}
+
+message RegisterRs {
+  int32 result = 1; // proto::REGISTER_SUCC / REGISTER_NICK_EXIT / REGISTER_TEL_EXIT
+}
+
+// ---------------- 登录 ----------------
+message LoginRq {
+  string tel = 1;
+  string pass = 2;
+}
+
+message LoginRs {
+  int32 userid = 1;
+  int32 result = 2; // proto::LOGIN_SUCCESS / LOGIN_NOTEXIT / LOGIN_PASSERROR
+}
+
+// ---------------- 用户/好友信息 ----------------
+// 登录成功后服务端逐条下发：userid == 自己 id 表示本人资料，否则为好友
+message FriendInfo {
+  int32 userid = 1;
+  int32 iconid = 2;
+  int32 status = 3;   // proto::STATUS_ONLINE / STATUS_OFFLINE
+  string nick = 4;    // UTF-8
+  string feeling = 5; // UTF-8
+}
+
+// ---------------- 聊天 ----------------
+// C→S：我发给好友；S→C：好友发给我 / 离线消息补发（此时 myid=发送方, friid=我）
+message ChatInfoRq {
+  int32 myid = 1;
+  int32 friid = 2;
+  string msg = 3; // UTF-8，软上限 proto::CHAT_MSG_LEN
+}
+
+// S→C：发送结果回执（myid=接收方朋友, friid=自己）
+message ChatInfoRs {
+  int32 myid = 1;
+  int32 friid = 2;
+  int32 result = 3; // proto::CHAT_RESULT_SUCC / CHAT_RESULT_FAIL
+}
+
+// ---------------- 添加好友 ----------------
+message AddFriendRq {
+  int32 myid = 1;
+  string mynick = 2;  // UTF-8
+  string frinick = 3; // UTF-8，要添加的好友昵称
+}
+
+message AddFriendRs {
+  int32 result = 1;     // proto::ADD_FRIEND_AGREE / REJECT / OFFLINE / NOTEXIT
+  int32 destid = 2;     // 请求发起人
+  string destnick = 3;  // UTF-8
+  int32 myid = 4;       // 回复人（被添加方）
+  string mynick = 5;    // UTF-8
+}
+
+// ---------------- 下线通知 ----------------
+// C→S：告知自己下线；S→C：转发给在线好友
+message FriendOffline {
+  int32 offlineid = 1;
+}

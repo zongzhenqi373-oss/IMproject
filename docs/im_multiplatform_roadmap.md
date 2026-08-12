@@ -227,7 +227,7 @@ flowchart LR
 | **P0 必改** | 补线程池 + 加锁 | 容易 | 1-2 天 | 方案 A：保留 `recvThread` 模型，改投递任务队列 + 固定 worker 池；`m_mapIdtoSocket` / `m_addrFrom` 加 `std::mutex` 或换并发容器。**阶段-1 已完成加锁**；worker 池推迟到阶段 0 与 asio 重写合并 |
 | P1 推荐 | 跨平台（Win→Linux） | 中等 | 3-5 天 | net 层 `WinSock2`→`<sys/socket>`、`_beginthreadex`→`std::thread`、`HANDLE`→`pthread`；`Kernel` 业务层可保留 |
 | P1 推荐 | 心跳 / 断线检测 | 中等 | 2 天 | 新增心跳协议 + 超时清理 map，移动端必需 |
-| P2 二期 | 协议迁 protobuf | 中等-困难 | 5-8 天 | `def.h` 全部 struct 重写为 `.proto`，客户端 net 层同步改造，需新老协议兼容窗口 |
+| P2 二期 | 协议迁 protobuf | 中等-困难 | 5-8 天 | ~~`def.h` 全部 struct 重写为 `.proto`~~ **已完成（2026-08-12）**：`protocol/im.proto` + 生成物提交于 `protocol/generated/`；线格式 `[4B 大端包长][4B 小端协议号][pb payload]`；client_core 与服务端 Kernel 已同步迁移（服务端待 Windows 编译验证）；双端自控锁步升级，未保留新老兼容窗口 |
 | P3 远期 | 群聊 / 文件传输 | 困难 | 1-2 周 | 新协议 + 新表 + 文件存储方案 |
 
 ### 7.2 可保留 vs 需重构

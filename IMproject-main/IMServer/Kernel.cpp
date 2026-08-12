@@ -20,14 +20,14 @@ Kernel::~Kernel()
 
 }
 
-//³õÊ¼»¯º¯ÊıÖ¸ÕëÊı×é
+//åˆå§‹åŒ–å‡½æ•°æŒ‡é’ˆæ•°ç»„
 void Kernel::setFunArr()
 {
 	cout << __func__ << endl;
-	//³õÊ¼»¯Êı×é
+	//åˆå§‹åŒ–æ•°ç»„
 	memset(m_dealFunArr, 0, sizeof(m_dealFunArr));
 
-	//°Ñº¯ÊıµØÖ·±£´æµ½Êı×éÖĞ
+	//æŠŠå‡½æ•°åœ°å€ä¿å­˜åˆ°æ•°ç»„ä¸­
 	m_dealFunArr[DEF_PROT_REGISTER_RQ       - DEF_BASE] = &Kernel::DealRegisterRq;
 	m_dealFunArr[DEF_PROT_LOGIN_RQ		    - DEF_BASE] = &Kernel::DealLoginRq;
 	m_dealFunArr[DEF_PROT_FRIEND_OFFLINE	- DEF_BASE] = &Kernel::DealOfflineRq;
@@ -36,217 +36,250 @@ void Kernel::setFunArr()
 	m_dealFunArr[DEF_PROT_ADD_FRIEND_RS		- DEF_BASE] = &Kernel::DealAddFriendRs;
 }
 
-//´ò¿ª·şÎñÆ÷
+//æ‰“å¼€æœåŠ¡å™¨
 bool Kernel::startServer()
 {
-	//´ò¿ªÍøÂç
+	//æ‰“å¼€ç½‘ç»œ
 	if (!m_pMediator->openNet())
 	{
-		cout << "´ò¿ª·şÎñÆ÷Ê§°Ü£¡" << endl;
+		cout << "æ‰“å¼€æœåŠ¡å™¨å¤±è´¥ï¼" << endl;
 		return false;
 	}
-	//Á¬½ÓÊı¾İ¿â
+	//è¿æ¥æ•°æ®åº“
 	char ip[] = "127.0.0.1";
 	char user[] = "root";
 	char pass[] = "zongzhenqi373";
 	char db[] = "20250113im";
 	if (!m_mysql.ConnectMySql(ip, user, pass, db))
 	{
-		cout << "Á¬½ÓÊı¾İ¿âÊ§°Ü£¡" << endl;
+		cout << "è¿æ¥æ•°æ®åº“å¤±è´¥ï¼" << endl;
 		return false;
 	}
 
 	return true;
 }
 
-//¹Ø±Õ·şÎñÆ÷
+//å…³é—­æœåŠ¡å™¨
 void Kernel::closeServer()
 {
-	//¹Ø±ÕÍøÂç
+	//å…³é—­ç½‘ç»œ
 	m_pMediator->closeNet();
-	//¶Ï¿ªÓëÊı¾İ¿âµÄÁ¬½Ó
+	//æ–­å¼€ä¸æ•°æ®åº“çš„è¿æ¥
 	m_mysql.DisConnect();
 
 }
 
-//´¦ÀíºÍ·Ö·¢ËùÓĞÊÕµ½µÄÊı¾İ
+//ç»„è£…å¹¶å‘é€ä¸€ä¸ªå®Œæ•´åŒ…ä½“ï¼š4B å°ç«¯åè®®å· + pb payloadï¼ˆnet å±‚å†åŠ  4B å¤§ç«¯åŒ…é•¿ï¼‰
+void Kernel::sendPacket(protType type, const std::string& payload, unsigned long to)
+{
+	std::string body;
+	body.resize(sizeof(protType) + payload.size());
+	memcpy(&body[0], &type, sizeof(type));           // x86/x64 ä¸»æœºåºå³å°ç«¯
+	memcpy(&body[sizeof(type)], payload.data(), payload.size());
+	m_pMediator->sendData(body.data(), (int)body.size(), to);
+}
+
+//å¤„ç†å’Œåˆ†å‘æ‰€æœ‰æ”¶åˆ°çš„æ•°æ®
 void Kernel::DealData(char* data, int len, unsigned long from)
 {
 	cout << __func__ << endl;
-	//È¡³öĞ­ÒéÀàĞÍ
+	//åŒ…ä½“ = [4B å°ç«¯åè®®å·][pb payload]
+	if (!data || len < (int)sizeof(protType))
+	{
+		cout << "éæ³•åŒ…é•¿åº¦:" << len << endl;
+		return;
+	}
+
+	//å–å‡ºåè®®ç±»å‹ï¼ˆx86/x64 ä¸»æœºåºå³å°ç«¯ï¼Œä¸å®¢æˆ·ç«¯çº¿æ ¼å¼ä¸€è‡´ï¼‰
 	protType type = *(protType*)data;
 
-	//¼ÆËãÊı×éÏÂ±í
+	//è®¡ç®—æ•°ç»„ä¸‹è¡¨
 	int index = type - DEF_BASE;
 
-	//ÅĞ¶ÏÊı×éÏÂ±êÊÇ·ñÔÚÓĞĞ§·¶Î§ÄÚ
+	//åˆ¤æ–­æ•°ç»„ä¸‹æ ‡æ˜¯å¦åœ¨æœ‰æ•ˆèŒƒå›´å†…
 	if (index >= 0 && index < DEF_PROT_COUNT)
 	{
-		//¸ù¾İÊı×éÏÂ±êÈ¡³öº¯ÊıµØÖ·
+		//æ ¹æ®æ•°ç»„ä¸‹æ ‡å–å‡ºå‡½æ•°åœ°å€
 		DEAL_FUN pFun = m_dealFunArr[index];
-		//ÅĞ¶Ïº¯ÊıÖ¸ÕëÊÇ·ñÓĞĞ§
+		//åˆ¤æ–­å‡½æ•°æŒ‡é’ˆæ˜¯å¦æœ‰æ•ˆ
 		if (pFun)
 		{
-			(this->*pFun)(data, len, from);   //º¯ÊıÖ¸ÕëÊÇÒ»¸ö±äÁ¿£¬ĞèÒª°ÑthisÏÔÊ½Ğ´³öÀ´£¬²»È»²»ÖªµÀ×÷ÓÃÓò
+			//è·³è¿‡ 4B åè®®å·ï¼Œhandler åªå¤„ç† pb payload
+			(this->*pFun)(data + sizeof(protType), len - (int)sizeof(protType), from);
 		}
-		else  //Ö¸ÕëÎª¿Õ£º1¡¢½á¹¹ÌåµÄtypeÖµĞ´´íÁË£»2¡¢·¢¹ıÀ´µÄ½á¹¹Ìå´íÁË
+		else  //æŒ‡é’ˆä¸ºç©ºï¼šåè®®å·æœªæ³¨å†Œ
 		{
 			cout << "type2:" << type << endl;
 		}
 	}
-	else   //Ô½½çÁË1¡¢offsetÃ»ÓĞÇåÁã2¡¢½á¹¹ÌåÉùÃ÷µÄÊ±ºòprottypeÃ»ÓĞ·ÅÔÚµÚÒ»¸ö¶¨Òå3¡¢¿Í»§¶Ë·¢ËÍµÄ´íÎó4¡¢²âÊÔ´úÂëÃ»É¾
+	else   //è¶Šç•Œï¼šåè®®å·éæ³•
 	{
 		cout << "type1:" << type << endl;
 	}
 }
 
-//´¦Àí×¢²áÇëÇóµÄº¯Êı
+//å¤„ç†æ³¨å†Œè¯·æ±‚çš„å‡½æ•°
 void Kernel::DealRegisterRq(char* data, int len, unsigned long from)
 {
 	cout << __func__ << endl;
-	//1¡¢²ğ°ü
-	PROT_REGISTER_RQ* rq = (PROT_REGISTER_RQ*)data;
+	//1ã€è§£æ pb
+	im::proto::RegisterRq rq;
+	if (!rq.ParseFromArray(data, len))
+	{
+		cout << "è§£ææ³¨å†Œè¯·æ±‚å¤±è´¥ï¼" << endl;
+		return;
+	}
 
-	//×ªÒåÓÃ»§ÊäÈë£¬·ÀÖ¹ SQL ×¢Èë£¨êÇ³Æ/µç»°/ÃÜÂë¾ùÀ´×Ô¿Í»§¶Ë£¬²»¿ÉĞÅ£©
+	//é˜²å¾¡æ€§æˆªæ–­ï¼ˆå­—æ®µè½¯ä¸Šé™ï¼Œé˜²è¶…é•¿å­—æ®µå†™åº“ï¼‰
+	std::string nick = utf8Truncate(rq.nick(), USER_NICK_LEN - 1);
+	std::string tel  = utf8Truncate(rq.tel(),  USER_TEL_LEN - 1);
+	std::string pass = utf8Truncate(rq.pass(), USER_PASS_LEN - 1);
+
+	//è½¬ä¹‰ç”¨æˆ·è¾“å…¥ï¼Œé˜²æ­¢ SQL æ³¨å…¥ï¼ˆæ˜µç§°/ç”µè¯/å¯†ç å‡æ¥è‡ªå®¢æˆ·ç«¯ï¼Œä¸å¯ä¿¡ï¼‰
 	char escNick[USER_NICK_LEN * 2 + 1] = "";
 	char escTel[USER_TEL_LEN * 2 + 1] = "";
 	char escPass[USER_PASS_LEN * 2 + 1] = "";
-	m_mysql.EscapeString(rq->nick, (int)strnlen_s(rq->nick, USER_NICK_LEN), escNick, sizeof(escNick));
-	m_mysql.EscapeString(rq->tel,  (int)strnlen_s(rq->tel,  USER_TEL_LEN),  escTel,  sizeof(escTel));
-	m_mysql.EscapeString(rq->pass, (int)strnlen_s(rq->pass, USER_PASS_LEN), escPass, sizeof(escPass));
+	m_mysql.EscapeString(nick.c_str(), (int)nick.size(), escNick, sizeof(escNick));
+	m_mysql.EscapeString(tel.c_str(),  (int)tel.size(),  escTel,  sizeof(escTel));
+	m_mysql.EscapeString(pass.c_str(), (int)pass.size(), escPass, sizeof(escPass));
 
-	//2¡¢¸ù¾İêÇ³Æ´ÓÊı¾İ¿âÖĞ²éÑ¯êÇ³Æ
+	//2ã€æ ¹æ®æ˜µç§°ä»æ•°æ®åº“ä¸­æŸ¥è¯¢æ˜µç§°
 	list<string> listRes;
 	char sql[1024] = "";
 	sprintf_s(sql,"select name from t_user where name = '%s';",escNick);
 	if (!m_mysql.SelectMySql(sql,1,listRes))
 	{
-		cout << "²éÑ¯Êı¾İ¿âÊ§°Ü£¡" << sql << endl;
+		cout << "æŸ¥è¯¢æ•°æ®åº“å¤±è´¥ï¼" << sql << endl;
 		return;
 	}
 
-	PROT_REGISTER_RS rs;
-	//3¡¢ÅĞ¶ÏêÇ³Æ²éÑ¯½á¹ûÊÇ·ñÎª¿Õ
+	im::proto::RegisterRs rs;
+	//3ã€åˆ¤æ–­æ˜µç§°æŸ¥è¯¢ç»“æœæ˜¯å¦ä¸ºç©º
 	if (listRes.size() == 0)
 	{
-		//Èç¹ûÎª¿ÕËµÃ÷êÇ³ÆÎ´±»×¢²á
-		//4¡¢¸ù¾İµç»°ºÅÂë´ÓÊı¾İ¿âÖĞ²éÑ¯
+		//å¦‚æœä¸ºç©ºè¯´æ˜æ˜µç§°æœªè¢«æ³¨å†Œ
+		//4ã€æ ¹æ®ç”µè¯å·ç ä»æ•°æ®åº“ä¸­æŸ¥è¯¢
 		sprintf_s(sql, "select tel from t_user where tel = '%s';", escTel);
 		if (!m_mysql.SelectMySql(sql, 1, listRes))
 		{
-			cout << "²éÑ¯Êı¾İ¿âÊ§°Ü£¡" << sql << endl;
+			cout << "æŸ¥è¯¢æ•°æ®åº“å¤±è´¥ï¼" << sql << endl;
 			return;
 		}
-		//5¡¢ÅĞ¶Ïµç»°ºÅÂë²éÑ¯½á¹ûÊÇ·ñÎª¿Õ
+		//5ã€åˆ¤æ–­ç”µè¯å·ç æŸ¥è¯¢ç»“æœæ˜¯å¦ä¸ºç©º
 		if (listRes.size() == 0)
 		{
-			//Èç¹ûÎª¿Õ£¬ËµÃ÷µç»°ºÅÂëÃ»±»×¢²á
-			//6¡¢°ÑÓÃ»§×¢²áµÄĞÅÏ¢´æÈëÊı¾İ¿âÖĞ
-			sprintf_s(sql ,"insert into t_user (name,tel,passwd,feeling,iconid) values ('%s','%s','%s','Å¬Á¦ÊµÏÖ²Æ¸»×ÔÓÉ',3);"
+			//å¦‚æœä¸ºç©ºï¼Œè¯´æ˜ç”µè¯å·ç æ²¡è¢«æ³¨å†Œ
+			//6ã€æŠŠç”¨æˆ·æ³¨å†Œçš„ä¿¡æ¯å­˜å…¥æ•°æ®åº“ä¸­
+			sprintf_s(sql ,"insert into t_user (name,tel,passwd,feeling,iconid) values ('%s','%s','%s','åŠªåŠ›å®ç°è´¢å¯Œè‡ªç”±',3);"
 				      ,escNick,escTel,escPass);
 			if (!m_mysql.UpdateMySql(sql))
 			{
-				cout << "±£´æĞÅÏ¢Ê§°Ü£¡" << sql << endl;
+				cout << "ä¿å­˜ä¿¡æ¯å¤±è´¥ï¼" << sql << endl;
 				return;
 			}
-			rs.result = REGISTER_SUCC;
+			rs.set_result(REGISTER_SUCC);
 		}
 		else
 		{
-			//Èç¹û²»Îª¿Õ£¬ÄÇÃ´ËµÃ÷µç»°ºÅÂë±»×¢²á¹ı£¬×¢²áÊ§°Ü
-			rs.result = REGISTER_TEL_EXIT;
+			//å¦‚æœä¸ä¸ºç©ºï¼Œé‚£ä¹ˆè¯´æ˜ç”µè¯å·ç è¢«æ³¨å†Œè¿‡ï¼Œæ³¨å†Œå¤±è´¥
+			rs.set_result(REGISTER_TEL_EXIT);
 		}
 	}
 	else
 	{
-		//Èç¹û²»Îª¿Õ£¬ËµÃ÷êÇ³Æ±»×¢²á¹ı£¬×¢²áÊ§°Ü
-		rs.result = REGISTER_NICK_EXIT;
+		//å¦‚æœä¸ä¸ºç©ºï¼Œè¯´æ˜æ˜µç§°è¢«æ³¨å†Œè¿‡ï¼Œæ³¨å†Œå¤±è´¥
+		rs.set_result(REGISTER_NICK_EXIT);
 	}
 
-	//4¡¢²»¹Ü×¢²á½á¹û³É¹¦»¹ÊÇÊ§°Ü£¬¶¼Òª¸ø¿Í»§¶Ë·µ»Ø×¢²á½á¹û
-	m_pMediator->sendData((char*)&rs, sizeof(rs), from);
+	//4ã€ä¸ç®¡æ³¨å†Œç»“æœæˆåŠŸè¿˜æ˜¯å¤±è´¥ï¼Œéƒ½è¦ç»™å®¢æˆ·ç«¯è¿”å›æ³¨å†Œç»“æœ
+	sendPacket(DEF_PROT_REGISTER_RS, rs.SerializeAsString(), from);
 }
 
-//´¦ÀíµÇÂ¼ÇëÇóµÄº¯Êı
+//å¤„ç†ç™»å½•è¯·æ±‚çš„å‡½æ•°
 void Kernel::DealLoginRq(char* data, int len, unsigned long from)
 {
 	cout << __func__ << endl;
-	PROT_LOGIN_RQ* rq = (PROT_LOGIN_RQ*)data;
+	im::proto::LoginRq rq;
+	if (!rq.ParseFromArray(data, len))
+	{
+		cout << "è§£æç™»å½•è¯·æ±‚å¤±è´¥ï¼" << endl;
+		return;
+	}
 
-	//×ªÒåÓÃ»§ÊäÈëµÄµç»°ºÅÂë£¬·ÀÖ¹ SQL ×¢Èë
+	std::string tel = utf8Truncate(rq.tel(), USER_TEL_LEN - 1);
+
+	//è½¬ä¹‰ç”¨æˆ·è¾“å…¥çš„ç”µè¯å·ç ï¼Œé˜²æ­¢ SQL æ³¨å…¥
 	char escTel[USER_TEL_LEN * 2 + 1] = "";
-	m_mysql.EscapeString(rq->tel, (int)strnlen_s(rq->tel, USER_TEL_LEN), escTel, sizeof(escTel));
+	m_mysql.EscapeString(tel.c_str(), (int)tel.size(), escTel, sizeof(escTel));
 
-	//¸ù¾İµç»°ºÅÂë²éÑ¯ÃÜÂë
+	//æ ¹æ®ç”µè¯å·ç æŸ¥è¯¢å¯†ç 
 	list<string> listRes;
 	char sql[1024] = "";
 	sprintf_s(sql, "select passwd,id from t_user where tel = '%s';", escTel);
 	if (!m_mysql.SelectMySql(sql,2,listRes))
 	{
-		cout << "²éÑ¯Êı¾İ¿âÊ§°Ü£¡" << sql << endl;
+		cout << "æŸ¥è¯¢æ•°æ®åº“å¤±è´¥ï¼" << sql << endl;
 		return;	
 	}
 
-	PROT_LOGIN_RS rs;
-	//ÅĞ¶Ï²éÑ¯ÃÜÂëÊÇ·ñÎª¿Õ
+	im::proto::LoginRs rs;
+	//åˆ¤æ–­æŸ¥è¯¢å¯†ç æ˜¯å¦ä¸ºç©º
 	if (listRes.size() == 0)
 	{
-		//Èç¹ûÎª¿Õ£¬ËµÃ÷µç»°ºÅÂëÃ»ÓĞ×¢²á¹ı£¬µÇÂ½Ê§°Ü
-		rs.result = LOGIN_NOTEXIT;
-		cout << "µÇÂ¼Ê§°Ü£¡" << endl;
+		//å¦‚æœä¸ºç©ºï¼Œè¯´æ˜ç”µè¯å·ç æ²¡æœ‰æ³¨å†Œè¿‡ï¼Œç™»é™†å¤±è´¥
+		rs.set_result(LOGIN_NOTEXIT);
+		cout << "ç™»å½•å¤±è´¥ï¼" << endl;
 	}
 	else
 	{
-		//Èç¹û²»Îª¿Õ£¬ÄÇ¾Í´ÓlistResÖĞÈ¡³öÃÜÂë
+		//å¦‚æœä¸ä¸ºç©ºï¼Œé‚£å°±ä»listResä¸­å–å‡ºå¯†ç 
 		string passLine = listRes.front();
-		listRes.pop_front();   //´ÓlistÖĞÉ¾³ıÈ¡×ßµÄÊı¾İ
+		listRes.pop_front();   //ä»listä¸­åˆ é™¤å–èµ°çš„æ•°æ®
 		int id = stoi(listRes.front());
-		listRes.pop_front();   //´ÓlistÖĞÉ¾³ıÈ¡×ßµÄÊı¾İ
+		listRes.pop_front();   //ä»listä¸­åˆ é™¤å–èµ°çš„æ•°æ®
 
-		//±È½ÏÈ¡³öµÄÃÜÂëºÍµÇÂ¼ÊäÈëµÄÃÜÂëÊÇ·ñÏàµÈ
-		if (passLine == string(rq->pass))
+		//æ¯”è¾ƒå–å‡ºçš„å¯†ç å’Œç™»å½•è¾“å…¥çš„å¯†ç æ˜¯å¦ç›¸ç­‰
+		if (passLine == rq.pass())
 		{
-			//Èç¹ûÏàµÈ£¬ÄÇÃ´µÇÂ¼³É¹¦
-			rs.result = LOGIN_SUCCESS;
-			rs.userid = id;
+			//å¦‚æœç›¸ç­‰ï¼Œé‚£ä¹ˆç™»å½•æˆåŠŸ
+			rs.set_result(LOGIN_SUCCESS);
+			rs.set_userid(id);
 
-			//±£´æµ±Ç°ÓÃ»§µÄidºÍsocket£¨¼ÓËø£©
+			//ä¿å­˜å½“å‰ç”¨æˆ·çš„idå’Œsocketï¼ˆåŠ é”ï¼‰
 			setSocket(id, from);
 
-			m_pMediator->sendData((char*)&rs, sizeof(rs), from);
+			sendPacket(DEF_PROT_LOGIN_RS, rs.SerializeAsString(), from);
 
-			cout << "lllllllllll" << endl;
-
-			//¸ù¾İid²éÑ¯µ±Ç°ÓÃ»§ÒÔ¼°ºÃÓÑµÄĞÅÏ¢
+			//æ ¹æ®idæŸ¥è¯¢å½“å‰ç”¨æˆ·ä»¥åŠå¥½å‹çš„ä¿¡æ¯
 			getUserInfoAndFriendInfo(id);
 
-			// ·¢ËÍÀëÏßÏûÏ¢£¨¹Ø¼ü£©
+			// å‘é€ç¦»çº¿æ¶ˆæ¯ï¼ˆå…³é”®ï¼‰
 			sendOfflinemsg(id);
 
 			return;
 		}
 		else
 		{
-			//Èç¹û²»ÏàµÈ£¬ÄÇÃ´µÇÂ¼Ê§°Ü£¬ÃÜÂë´íÎó
-			rs.result = LOGIN_PASSERROR;
+			//å¦‚æœä¸ç›¸ç­‰ï¼Œé‚£ä¹ˆç™»å½•å¤±è´¥ï¼Œå¯†ç é”™è¯¯
+			rs.set_result(LOGIN_PASSERROR);
 		}
 	}
-	m_pMediator->sendData((char*)&rs, sizeof(rs), from);
+	sendPacket(DEF_PROT_LOGIN_RS, rs.SerializeAsString(), from);
 }
 
-//¸ù¾İid²éÑ¯µ±Ç°ÓÃ»§ÒÔ¼°ºÃÓÑµÄĞÅÏ¢
+//æ ¹æ®idæŸ¥è¯¢å½“å‰ç”¨æˆ·ä»¥åŠå¥½å‹çš„ä¿¡æ¯
 void Kernel::getUserInfoAndFriendInfo(int id)
 {
 	cout << __func__ << endl;
-	//¸ù¾İ×Ô¼ºµÄid²éÑ¯×Ô¼ºµÄĞÅÏ¢
-	PROT_FRIEND_INFO Myinfo = {};
+	//æ ¹æ®è‡ªå·±çš„idæŸ¥è¯¢è‡ªå·±çš„ä¿¡æ¯
+	im::proto::FriendInfo Myinfo;
 	getInfoById(id, &Myinfo);
 
-	//°Ñ×Ô¼ºµÄĞÅÏ¢·¢ËÍ¸ø¿Í»§¶Ë£¨¼ÓËø²éÑ¯ socket£©
+	//æŠŠè‡ªå·±çš„ä¿¡æ¯å‘é€ç»™å®¢æˆ·ç«¯ï¼ˆåŠ é”æŸ¥è¯¢ socketï¼‰
 	unsigned long selfSock = 0;
 	if (getSocket(id, selfSock))
 	{
-		m_pMediator->sendData((char*)&Myinfo, sizeof(Myinfo), selfSock);
+		sendPacket(DEF_PROT_FRIEND_INFO, Myinfo.SerializeAsString(), selfSock);
 	}
 	else
 	{
@@ -254,94 +287,96 @@ void Kernel::getUserInfoAndFriendInfo(int id)
 	}
 	
 
-	//¸ù¾İ×Ô¼ºµÄid²éÑ¯ºÃÓÑµÄid
+	//æ ¹æ®è‡ªå·±çš„idæŸ¥è¯¢å¥½å‹çš„id
 	list<string> listRes;
 	char sql[1024] = "";
 	sprintf_s(sql, "select idB from t_friend where idA = '%d';", id);
 	if (!m_mysql.SelectMySql(sql, 1, listRes))
 	{
-		cout << "²éÑ¯Êı¾İ¿âÊ§°Ü£¡" << sql << endl;
+		cout << "æŸ¥è¯¢æ•°æ®åº“å¤±è´¥ï¼" << sql << endl;
 		return;
 	}
 
-	//±éÀúºÃÓÑÁĞ±í
+	//éå†å¥½å‹åˆ—è¡¨
 	int friendid = 0;
-	PROT_FRIEND_INFO Friendinfo = {};
+	im::proto::FriendInfo Friendinfo;
+	const std::string myInfoPayload = Myinfo.SerializeAsString();
 	while (listRes.size() > 0)
 	{
-		//¸ù¾İºÃÓÑµÄid²éÑ¯ºÃÓÑµÄĞÅÏ¢
+		//æ ¹æ®å¥½å‹çš„idæŸ¥è¯¢å¥½å‹çš„ä¿¡æ¯
 		friendid = stoi(listRes.front());
-		listRes.pop_front();   //´ÓlistÖĞÉ¾³ıÈ¡×ßµÄÊı¾İ
+		listRes.pop_front();   //ä»listä¸­åˆ é™¤å–èµ°çš„æ•°æ®
+		Friendinfo.Clear();
 		getInfoById(friendid, &Friendinfo);
 
-		//°ÑºÃÓÑµÄĞÅÏ¢·¢ËÍ¸ø¿Í»§¶Ë£¨¼ÓËø²éÑ¯ socket£©
+		//æŠŠå¥½å‹çš„ä¿¡æ¯å‘é€ç»™å®¢æˆ·ç«¯ï¼ˆåŠ é”æŸ¥è¯¢ socketï¼‰
 		if (getSocket(id, selfSock))
 		{
-			m_pMediator->sendData((char*)&Friendinfo, sizeof(Friendinfo), selfSock);
+			sendPacket(DEF_PROT_FRIEND_INFO, Friendinfo.SerializeAsString(), selfSock);
 		}
 		else
 		{
 			cout << "ID:" << id << endl;
 		}
-		//²é¿´ÅóÓÑÔÚ²»ÔÚÏß£¨¼ÓËø£©
+		//æŸ¥çœ‹æœ‹å‹åœ¨ä¸åœ¨çº¿ï¼ˆåŠ é”ï¼‰
 		unsigned long friSock = 0;
 		if (getSocket(friendid, friSock))
 		{
-			//Èç¹ûÔÚÏß£¬ÄÇÃ´¸øºÃÓÑ·¢ËÍ×Ô¼ºµÄĞÅÏ¢
-			m_pMediator->sendData((char*)&Myinfo, sizeof(Myinfo), friSock);
+			//å¦‚æœåœ¨çº¿ï¼Œé‚£ä¹ˆç»™å¥½å‹å‘é€è‡ªå·±çš„ä¿¡æ¯
+			sendPacket(DEF_PROT_FRIEND_INFO, myInfoPayload, friSock);
 		}
 	}
 	
 }
 
-//¸ù¾İid²éÑ¯ÓÃ»§ĞÅÏ¢
-void Kernel::getInfoById(int id, PROT_FRIEND_INFO* info)
+//æ ¹æ®idæŸ¥è¯¢ç”¨æˆ·ä¿¡æ¯
+void Kernel::getInfoById(int id, im::proto::FriendInfo* info)
 {
 	cout << __func__ << endl;
-	info->userid = id;
+	info->set_userid(id);
 	if (isOnline(id))
 	{
-		//ÔÚÏß
-		info->status = STATUS_ONLINE;
+		//åœ¨çº¿
+		info->set_status(STATUS_ONLINE);
 	}
 	else
 	{
-		//²»ÔÚÏß
-		info->status = STATUS_OFFLINE;
+		//ä¸åœ¨çº¿
+		info->set_status(STATUS_OFFLINE);
 	}
-	//¸ù¾İid²éÑ¯ÓÃ»§Ãû×Ö£¬Ç©Ãû£¬Í·Ïñid
+	//æ ¹æ®idæŸ¥è¯¢ç”¨æˆ·åå­—ï¼Œç­¾åï¼Œå¤´åƒid
 	list<string> listRes;
 	char sql[1024] = "";
 	sprintf_s(sql, "select name,feeling,iconid from t_user where id = '%d';", id);
 	if (!m_mysql.SelectMySql(sql, 3, listRes))
 	{
-		cout << "²éÑ¯Êı¾İ¿âÊ§°Ü£¡" << sql << endl;
+		cout << "æŸ¥è¯¢æ•°æ®åº“å¤±è´¥ï¼" << sql << endl;
 		return;
 	}
 
 	if (listRes.size() == 3)
 	{
-		//´ÓlistÖĞÈ¡³öêÇ³Æ
+		//ä»listä¸­å–å‡ºæ˜µç§°
 		string nick = listRes.front();
-		strcpy_s(info->nick, sizeof(info->nick), nick.c_str());
-		listRes.pop_front();   //´ÓlistÖĞÉ¾³ıÈ¡×ßµÄÊı¾İ
+		info->set_nick(nick);
+		listRes.pop_front();   //ä»listä¸­åˆ é™¤å–èµ°çš„æ•°æ®
 
-		//´ÓlistÖĞÈ¡³öÇ©Ãû
+		//ä»listä¸­å–å‡ºç­¾å
 		string feeling = listRes.front();
-		strcpy_s(info->feeling, sizeof(info->feeling), feeling.c_str());
-		listRes.pop_front();   //´ÓlistÖĞÉ¾³ıÈ¡×ßµÄÊı¾İ
+		info->set_feeling(feeling);
+		listRes.pop_front();   //ä»listä¸­åˆ é™¤å–èµ°çš„æ•°æ®
 
-		//´ÓlistÖĞÈ¡³öÍ·Ïñid
-		info->iconid = stoi(listRes.front());
-		listRes.pop_front();   //´ÓlistÖĞÉ¾³ıÈ¡×ßµÄÊı¾İ
+		//ä»listä¸­å–å‡ºå¤´åƒid
+		info->set_iconid(stoi(listRes.front()));
+		listRes.pop_front();   //ä»listä¸­åˆ é™¤å–èµ°çš„æ•°æ®
 	}
 	else
 	{
-		cout << "sql£»" << sql << endl;
+		cout << "sqlï¼›" << sql << endl;
 	}
 }
 
-//ÀëÏßÏûÏ¢·¢ËÍ
+//ç¦»çº¿æ¶ˆæ¯å‘é€
 void Kernel::sendOfflinemsg(int id) {
 	cout << __func__ << endl;
 
@@ -352,13 +387,12 @@ void Kernel::sendOfflinemsg(int id) {
 
 	list<string> lst;
 	if (!m_mysql.SelectMySql(sql, 3, lst)) {
-		cout << "²éÑ¯Êı¾İ¿âÊ§°Ü£¡" << sql << endl;
+		cout << "æŸ¥è¯¢æ•°æ®åº“å¤±è´¥ï¼" << sql << endl;
 		return;
 	}
 
-	PROT_CHAT_INFO_RQ rq;
 	if (lst.size()==0) {
-		cout << "ÏûÏ¢ÁĞ±íÃ»ÓĞÒª·¢ËÍµÄÊı¾İ£¡" << endl;
+		cout << "æ¶ˆæ¯åˆ—è¡¨æ²¡æœ‰è¦å‘é€çš„æ•°æ®ï¼" << endl;
 	}
 	else
 	{
@@ -370,23 +404,20 @@ void Kernel::sendOfflinemsg(int id) {
 			string content = *it;
 			it++;
 
-			rq.myid = senderId;
-			rq.friid = id;
-			strcpy_s(rq.msg, content.c_str());
+			im::proto::ChatInfoRq rq;
+			rq.set_myid(senderId);
+			rq.set_friid(id);
+			rq.set_msg(content);
 
-			// ·¢ËÍ¸øµ±Ç°ÒÑµÇÂ¼ÓÃ»§£¨¼ÓËø²éÑ¯ socket£©
+			// å‘é€ç»™å½“å‰å·²ç™»å½•ç”¨æˆ·ï¼ˆåŠ é”æŸ¥è¯¢ socketï¼‰
 			unsigned long selfSock = 0;
 			if (getSocket(id, selfSock))
 			{
-				m_pMediator->sendData(
-					(char*)&rq,
-					sizeof(rq),
-					selfSock
-				);
+				sendPacket(DEF_PROT_CHAT_INFO_RQ, rq.SerializeAsString(), selfSock);
 			}
 
 
-			// ±ê¼Ç¸ÃÏûÏ¢ÒÑÍ¶µİ
+			// æ ‡è®°è¯¥æ¶ˆæ¯å·²æŠ•é€’
 			char updateSql[128] = "";
 			sprintf_s(updateSql,
 				"update offline_msg set is_delivered=1 where id=%d;",
@@ -396,40 +427,52 @@ void Kernel::sendOfflinemsg(int id) {
 	}
 }
 
-//´¦ÀíÏÂÏßÇëÇó
+//å¤„ç†ä¸‹çº¿è¯·æ±‚
 void Kernel::DealOfflineRq(char* data, int len, unsigned long from)
 {
 	cout << __func__ << endl;
-	PROT_FRIEND_OFFLINE* offlineRq = (PROT_FRIEND_OFFLINE*)data;
-	//1¡¢¸ù¾İid²éÕÒÏÂÏßÓÃ»§µÄºÃÓÑidÁĞ±í
-	list<string> listRes;
-	char sql[1024] = "";
-	sprintf_s(sql, "select idB from t_friend where idA = '%d';", offlineRq->offlineid);
-	if (!m_mysql.SelectMySql(sql, 1, listRes))
+	im::proto::FriendOffline offlineRq;
+	if (!offlineRq.ParseFromArray(data, len))
 	{
-		cout << "²éÑ¯Êı¾İ¿âÊ§°Ü£¡" << sql << endl;
+		cout << "è§£æä¸‹çº¿è¯·æ±‚å¤±è´¥ï¼" << endl;
 		return;
 	}
-	//2¡¢±éÀúºÃÓÑidÁĞ±í
+	//1ã€æ ¹æ®idæŸ¥æ‰¾ä¸‹çº¿ç”¨æˆ·çš„å¥½å‹idåˆ—è¡¨
+	list<string> listRes;
+	char sql[1024] = "";
+	sprintf_s(sql, "select idB from t_friend where idA = '%d';", offlineRq.offlineid());
+	if (!m_mysql.SelectMySql(sql, 1, listRes))
+	{
+		cout << "æŸ¥è¯¢æ•°æ®åº“å¤±è´¥ï¼" << sql << endl;
+		return;
+	}
+	//é‡ç»„è½¬å‘ç”¨çš„åŒ…ä½“ï¼ˆ4B åè®®å· + åŸ payloadï¼Œç›´æ¥é€ä¼ ï¼‰
+	std::string body;
+	body.resize(sizeof(protType) + len);
+	protType type = DEF_PROT_FRIEND_OFFLINE;
+	memcpy(&body[0], &type, sizeof(type));
+	memcpy(&body[sizeof(type)], data, len);
+
+	//2ã€éå†å¥½å‹idåˆ—è¡¨
 	int friendid = 0;
 	while (listRes.size() > 0)
 	{
-		//3¡¢È¡³öºÃÓÑµÄid
+		//3ã€å–å‡ºå¥½å‹çš„id
 		friendid = stoi(listRes.front());
-		//4¡¢´ÓÁĞ±íÖĞÉ¾³ıÒÑ¾­È¡³öµÄºÃÓÑid
+		//4ã€ä»åˆ—è¡¨ä¸­åˆ é™¤å·²ç»å–å‡ºçš„å¥½å‹id
 		listRes.pop_front();
-		//5¡¢ÅĞ¶ÏºÃÓÑÊÇ·ñÔÚÏß£¨¼ÓËø²éÑ¯ socket£¬ËøÍâ×ª·¢£©
+		//5ã€åˆ¤æ–­å¥½å‹æ˜¯å¦åœ¨çº¿ï¼ˆåŠ é”æŸ¥è¯¢ socketï¼Œé”å¤–è½¬å‘ï¼‰
 		unsigned long friSock = 0;
 		if (getSocket(friendid, friSock))
 		{
-			//6¡¢Èç¹ûÔÚÏß£¬¾Í¸øÔÚÏßºÃÓÑ·¢ËÍÏÂÏßÇëÇó
-			m_pMediator->sendData(data,len,friSock);
+			//6ã€å¦‚æœåœ¨çº¿ï¼Œå°±ç»™åœ¨çº¿å¥½å‹å‘é€ä¸‹çº¿è¯·æ±‚
+			m_pMediator->sendData(body.data(), (int)body.size(), friSock);
 		}
 
 	}
-	//7¡¢´ÓmapÖĞÉ¾³ıÏÂÏßÓÃ»§²¢È¡³ö socket£¨¼ÓËø£©£¬ËøÍâ closesocket
+	//7ã€ä»mapä¸­åˆ é™¤ä¸‹çº¿ç”¨æˆ·å¹¶å–å‡º socketï¼ˆåŠ é”ï¼‰ï¼Œé”å¤– closesocket
 	unsigned long offSock = 0;
-	if (eraseSocket(offlineRq->offlineid, offSock))
+	if (eraseSocket(offlineRq.offlineid(), offSock))
 	{
 		if (offSock > 0)
 		{
@@ -438,133 +481,168 @@ void Kernel::DealOfflineRq(char* data, int len, unsigned long from)
 	}
 }
 
-//´¦ÀíÁÄÌìÇëÇó
+//å¤„ç†èŠå¤©è¯·æ±‚
 void Kernel::DealChatRq(char* data, int len, unsigned long from)
 {
 	cout << __func__ << endl;
-	PROT_CHAT_INFO_RQ* rq = (PROT_CHAT_INFO_RQ*)data;
-	//ÅĞ¶ÏºÃÓÑÊÇ·ñÔÚÏß£¨¼ÓËø²éÑ¯ socket£¬ËøÍâ×ª·¢£©
-	unsigned long friSock = 0;
-	if (getSocket(rq->friid, friSock))
+	im::proto::ChatInfoRq rq;
+	if (!rq.ParseFromArray(data, len))
 	{
-		//Èç¹ûÔÚÏß£¬ÄÇÃ´°ÑÁÄÌìÇëÇó×ª·¢¸øºÃÓÑ
-		m_pMediator->sendData(data, len, friSock);
+		cout << "è§£æèŠå¤©è¯·æ±‚å¤±è´¥ï¼" << endl;
+		return;
+	}
+	//åˆ¤æ–­å¥½å‹æ˜¯å¦åœ¨çº¿ï¼ˆåŠ é”æŸ¥è¯¢ socketï¼Œé”å¤–è½¬å‘ï¼‰
+	unsigned long friSock = 0;
+	if (getSocket(rq.friid(), friSock))
+	{
+		//å¦‚æœåœ¨çº¿ï¼Œé‚£ä¹ˆæŠŠèŠå¤©è¯·æ±‚è½¬å‘ç»™å¥½å‹ï¼ˆé‡ç»„åŒ…ä½“é€ä¼ ï¼‰
+		std::string body;
+		body.resize(sizeof(protType) + len);
+		protType type = DEF_PROT_CHAT_INFO_RQ;
+		memcpy(&body[0], &type, sizeof(type));
+		memcpy(&body[sizeof(type)], data, len);
+		m_pMediator->sendData(body.data(), (int)body.size(), friSock);
 	}
 	else
 	{
-		//Èç¹û²»ÔÚÏß£¬ÄÇÃ´»Ø¸´Ò»¸ö²»ÔÚÏß×´Ì¬¸ø¿Í»§¶Ë²¢½«ÏûÏ¢±£´æµ½ÏûÏ¢ÁĞ±íÊı¾İ¿â
-		//×ªÒåÁÄÌìÄÚÈİ£¬·ÀÖ¹ SQL ×¢Èë£¨msg À´×Ô¿Í»§¶Ë£¬×î³¤ 8KB£©
+		//å¦‚æœä¸åœ¨çº¿ï¼Œé‚£ä¹ˆå›å¤ä¸€ä¸ªä¸åœ¨çº¿çŠ¶æ€ç»™å®¢æˆ·ç«¯å¹¶å°†æ¶ˆæ¯ä¿å­˜åˆ°æ¶ˆæ¯åˆ—è¡¨æ•°æ®åº“
+		//è½¬ä¹‰èŠå¤©å†…å®¹ï¼Œé˜²æ­¢ SQL æ³¨å…¥ï¼ˆmsg æ¥è‡ªå®¢æˆ·ç«¯ï¼‰
+		std::string msg = utf8Truncate(rq.msg(), CHAT_MSG_LEN - 1);
 		char escMsg[CHAT_MSG_LEN * 2 + 1] = "";
-		m_mysql.EscapeString(rq->msg, (int)strnlen_s(rq->msg, CHAT_MSG_LEN), escMsg, sizeof(escMsg));
+		m_mysql.EscapeString(msg.c_str(), (int)msg.size(), escMsg, sizeof(escMsg));
 
 		char sql[CHAT_MSG_LEN * 2 + 256] = "";
 		sprintf_s(sql,
 			"insert into offline_msg (sender_id, receiver_id, content) values(%d, %d, '%s');",
-			rq->myid,
-			rq->friid,
+			rq.myid(),
+			rq.friid(),
 			escMsg);
 
 		m_mysql.UpdateMySql(sql);
-		cout << "ÀëÏßÏûÏ¢ÒÑ±£´æ" << endl;
+		cout << "ç¦»çº¿æ¶ˆæ¯å·²ä¿å­˜" << endl;
 
-		PROT_CHAT_INFO_RS rs(rq->friid, 0, CHAT_RESULT_FAIL);
-		m_pMediator->sendData((char*)&rs,sizeof(rs),from);
+		im::proto::ChatInfoRs rs;
+		rs.set_myid(rq.friid());
+		rs.set_friid(0);
+		rs.set_result(CHAT_RESULT_FAIL);
+		sendPacket(DEF_PROT_CHAT_INFO_RS, rs.SerializeAsString(), from);
 	}
 }
 
-//´¦ÀíÌí¼ÓºÃÓÑÇëÇó
+//å¤„ç†æ·»åŠ å¥½å‹è¯·æ±‚
 void Kernel::DealAddFriendRq(char* data, int len, unsigned long from)
 {
 	cout << __func__ << endl;
-	PROT_ADD_FRIEND_RQ* rq = (PROT_ADD_FRIEND_RQ*)data;
+	im::proto::AddFriendRq rq;
+	if (!rq.ParseFromArray(data, len))
+	{
+		cout << "è§£ææ·»åŠ å¥½å‹è¯·æ±‚å¤±è´¥ï¼" << endl;
+		return;
+	}
 
-	//×ªÒåºÃÓÑêÇ³Æ£¬·ÀÖ¹ SQL ×¢Èë£¨frinick À´×Ô¿Í»§¶Ë£©
+	//è½¬ä¹‰å¥½å‹æ˜µç§°ï¼Œé˜²æ­¢ SQL æ³¨å…¥ï¼ˆfrinick æ¥è‡ªå®¢æˆ·ç«¯ï¼‰
+	std::string frinick = utf8Truncate(rq.frinick(), USER_NICK_LEN - 1);
 	char escFrinick[USER_NICK_LEN * 2 + 1] = "";
-	m_mysql.EscapeString(rq->frinick, (int)strnlen_s(rq->frinick, USER_NICK_LEN), escFrinick, sizeof(escFrinick));
+	m_mysql.EscapeString(frinick.c_str(), (int)frinick.size(), escFrinick, sizeof(escFrinick));
 
-	//¸ù¾İºÃÓÑêÇ³Æ²éÑ¯ºÃÓÑid
+	//æ ¹æ®å¥½å‹æ˜µç§°æŸ¥è¯¢å¥½å‹id
 	list<string> listRes;
 	char sql[1024] = "";
 	sprintf_s(sql, "select id from t_user where name = '%s';", escFrinick);
 	if (!m_mysql.SelectMySql(sql, 1, listRes))
 	{
-		cout << "²éÑ¯Êı¾İ¿âÊ§°Ü£¡" << sql << endl;
+		cout << "æŸ¥è¯¢æ•°æ®åº“å¤±è´¥ï¼" << sql << endl;
 		return;
 	}
-	//ÅĞ¶Ï²éÑ¯½á¹ûÊÇ·ñÎª¿Õ
+	//åˆ¤æ–­æŸ¥è¯¢ç»“æœæ˜¯å¦ä¸ºç©º
 	if (listRes.size() == 0)
 	{
-		//Èç¹ûÎª¿Õ£¬Ìí¼ÓºÃÓÑÊ§°Ü£¬ËµÃ÷ºÃÓÑ²»´æÔÚ£¬»Ø¸´Ò»¸öºÃÓÑ²»´æÔÚµÄĞÅÏ¢¸ø¿Í»§¶Ë
-		PROT_ADD_FRIEND_RS rs;
-		rs.result = ADD_FRIEND_NOTEXIT;
-		strcpy_s(rs.mynick ,sizeof(rs.mynick), rq->frinick); 
-		m_pMediator->sendData((char*)&rs, sizeof(rs), from);
+		//å¦‚æœä¸ºç©ºï¼Œæ·»åŠ å¥½å‹å¤±è´¥ï¼Œè¯´æ˜å¥½å‹ä¸å­˜åœ¨ï¼Œå›å¤ä¸€ä¸ªå¥½å‹ä¸å­˜åœ¨çš„ä¿¡æ¯ç»™å®¢æˆ·ç«¯
+		im::proto::AddFriendRs rs;
+		rs.set_result(ADD_FRIEND_NOTEXIT);
+		rs.set_mynick(rq.frinick());
+		sendPacket(DEF_PROT_ADD_FRIEND_RS, rs.SerializeAsString(), from);
 	}
 	else
 	{
-		//Èç¹û²»Îª¿ÕÃ»£¬ÄÇÃ´ÓÃ»§´æÔÚ£¬ÅĞ¶ÏºÃÓÑµ±Ç°ÊÇ·ñÔÚÏß£¨¼ÓËø£©
+		//å¦‚æœä¸ä¸ºç©ºæ²¡ï¼Œé‚£ä¹ˆç”¨æˆ·å­˜åœ¨ï¼Œåˆ¤æ–­å¥½å‹å½“å‰æ˜¯å¦åœ¨çº¿ï¼ˆåŠ é”ï¼‰
 		int friendid = 0;
 		friendid = stoi(listRes.front());
 		listRes.pop_front();
 		unsigned long friSock = 0;
 		if (getSocket(friendid, friSock))
 		{
-			//Èç¹ûÔÚÏß£¬½«Ìí¼ÓºÃÓÑµÄÇëÇó×ª·¢¸øÓÃ»§
-			m_pMediator->sendData(data, len, friSock);
+			//å¦‚æœåœ¨çº¿ï¼Œå°†æ·»åŠ å¥½å‹çš„è¯·æ±‚è½¬å‘ç»™ç”¨æˆ·ï¼ˆé‡ç»„åŒ…ä½“é€ä¼ ï¼‰
+			std::string body;
+			body.resize(sizeof(protType) + len);
+			protType type = DEF_PROT_ADD_FRIEND_RQ;
+			memcpy(&body[0], &type, sizeof(type));
+			memcpy(&body[sizeof(type)], data, len);
+			m_pMediator->sendData(body.data(), (int)body.size(), friSock);
 		}
 		else
 		{
-			//Èç¹û²»ÔÚÏß£¬ÄÇÃ´»Ø¸´Ò»¸öºÃÓÑ²»ÔÚÏßµÄĞÅÏ¢¸ø¿Í»§¶Ë£¬ºÃÓÑÌí¼ÓÊ§°Ü
-			PROT_ADD_FRIEND_RS rs;
-			rs.result = ADD_FRIEND_OFFLINE;
-			strcpy_s(rs.mynick, sizeof(rs.mynick), rq->frinick);
-			m_pMediator->sendData((char*)&rs, sizeof(rs), from);
+			//å¦‚æœä¸åœ¨çº¿ï¼Œé‚£ä¹ˆå›å¤ä¸€ä¸ªå¥½å‹ä¸åœ¨çº¿çš„ä¿¡æ¯ç»™å®¢æˆ·ç«¯ï¼Œå¥½å‹æ·»åŠ å¤±è´¥
+			im::proto::AddFriendRs rs;
+			rs.set_result(ADD_FRIEND_OFFLINE);
+			rs.set_mynick(rq.frinick());
+			sendPacket(DEF_PROT_ADD_FRIEND_RS, rs.SerializeAsString(), from);
 		}
 
 	}
 }
 
-//´¦ÀíÌí¼ÓºÃÓÑ»Ø¸´
+//å¤„ç†æ·»åŠ å¥½å‹å›å¤
 void Kernel::DealAddFriendRs(char* data, int len, unsigned long from)
 {
 	cout << __func__ << endl;
-	PROT_ADD_FRIEND_RS* rs = (PROT_ADD_FRIEND_RS*)data;
-
-	//Èç¹ûºÃÓÑÍ¬ÒâÌí¼Ó
-	if (rs->result == ADD_FRIEND_AGREE)
+	im::proto::AddFriendRs rs;
+	if (!rs.ParseFromArray(data, len))
 	{
-		//½«Ë«·½µÄºÃÓÑĞÅÏ¢Ğ´Èëµ½Êı¾İ¿âÖĞ
+		cout << "è§£ææ·»åŠ å¥½å‹å›å¤å¤±è´¥ï¼" << endl;
+		return;
+	}
+
+	//å¦‚æœå¥½å‹åŒæ„æ·»åŠ 
+	if (rs.result() == ADD_FRIEND_AGREE)
+	{
+		//å°†åŒæ–¹çš„å¥½å‹ä¿¡æ¯å†™å…¥åˆ°æ•°æ®åº“ä¸­
 		char sql[1024] = "";
-		sprintf_s(sql, "insert into t_friend values(%d ,%d) ;", rs->destid , rs->myid);
+		sprintf_s(sql, "insert into t_friend values(%d ,%d) ;", rs.destid() , rs.myid());
 		if (!m_mysql.UpdateMySql(sql))
 		{
-			cout << "²åÈëÊı¾İ¿âÊ§°Ü£¡" << sql << endl;
+			cout << "æ’å…¥æ•°æ®åº“å¤±è´¥ï¼" << sql << endl;
 			return;
 		}
 
-		sprintf_s(sql, "insert into t_friend values(%d ,%d) ;", rs->myid , rs->destid);
+		sprintf_s(sql, "insert into t_friend values(%d ,%d) ;", rs.myid() , rs.destid());
 		if (!m_mysql.UpdateMySql(sql))
 		{
-			cout << "²åÈëÊı¾İ¿âÊ§°Ü£¡" << sql << endl;
+			cout << "æ’å…¥æ•°æ®åº“å¤±è´¥ï¼" << sql << endl;
 			return;
 		}
 
-		//¸üĞÂË«·½ºÃÓÑÁĞ±í
-		getUserInfoAndFriendInfo(rs->destid);
+		//æ›´æ–°åŒæ–¹å¥½å‹åˆ—è¡¨
+		getUserInfoAndFriendInfo(rs.destid());
 
 	}
-	//ÎŞÂÛ½á¹ûÈçºÎ£¬¶¼°Ñ»Ø¸´µÄÊı¾İ´«¸ø·¢ÆğºÃÓÑÉêÇëµÄ¿Í»§¶Ë£¨¼ÓËø²éÑ¯ socket£©
+	//æ— è®ºç»“æœå¦‚ä½•ï¼Œéƒ½æŠŠå›å¤çš„æ•°æ®ä¼ ç»™å‘èµ·å¥½å‹ç”³è¯·çš„å®¢æˆ·ç«¯ï¼ˆé‡ç»„åŒ…ä½“é€ä¼ ï¼‰
 	unsigned long destSock = 0;
-	if (getSocket(rs->destid, destSock))
+	if (getSocket(rs.destid(), destSock))
 	{
-		m_pMediator->sendData(data, len, destSock);
+		std::string body;
+		body.resize(sizeof(protType) + len);
+		protType type = DEF_PROT_ADD_FRIEND_RS;
+		memcpy(&body[0], &type, sizeof(type));
+		memcpy(&body[sizeof(type)], data, len);
+		m_pMediator->sendData(body.data(), (int)body.size(), destSock);
 	}
 
 }
 
-//==================== m_mapIdtoSocket ¼ÓËø¸¨Öú·½·¨ ====================
-//×¢Òâ£ºËùÓĞ m_mapIdtoSocket µÄ¶ÁĞ´±ØĞëÍ¨¹ıÕâĞ©·½·¨£¬½ûÖ¹Ö±½Ó·ÃÎÊ¡£
-//ËøÄÚÖ»×ö map ²éÑ¯/ĞŞ¸Ä£¬ËøÍâµ÷ÓÃ sendData£¬±ÜÃâ³ÖËø×èÈûµ¼ÖÂËÀËø/½µ²¢·¢¡£
+//==================== m_mapIdtoSocket åŠ é”è¾…åŠ©æ–¹æ³• ====================
+//æ³¨æ„ï¼šæ‰€æœ‰ m_mapIdtoSocket çš„è¯»å†™å¿…é¡»é€šè¿‡è¿™äº›æ–¹æ³•ï¼Œç¦æ­¢ç›´æ¥è®¿é—®ã€‚
+//é”å†…åªåš map æŸ¥è¯¢/ä¿®æ”¹ï¼Œé”å¤–è°ƒç”¨ sendDataï¼Œé¿å…æŒé”é˜»å¡å¯¼è‡´æ­»é”/é™å¹¶å‘ã€‚
 
 bool Kernel::getSocket(int id, unsigned long& out)
 {
