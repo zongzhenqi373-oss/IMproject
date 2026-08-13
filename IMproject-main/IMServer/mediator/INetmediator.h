@@ -1,5 +1,6 @@
 #pragma once
 #include<iostream>
+#include"../net/NetTypes.h"
 using namespace std;
 
 class INet;
@@ -8,18 +9,18 @@ public:
 	INetmediator():m_pNet(nullptr){}
 	virtual ~INetmediator() {}
 
-	//´ò¿ªÍøÂç
-	//·µ»ØÖµ£ºbool true´ú±í³É¹¦£¬false´ú±íÊ§°Ü
+	//æ‰“å¼€ç½‘ç»œ
+	//è¿”å›å€¼ï¼šbool trueä»£è¡¨æˆåŠŸï¼Œfalseä»£è¡¨å¤±è´¥
 	virtual bool openNet() = 0;
 
-	//¹Ø±ÕÍøÂç
+	//å…³é—­ç½‘ç»œ
 	virtual void closeNet() = 0;
 
-	//·¢ËÍÊı¾İ
-	virtual bool sendData(char* data, int len, unsigned long to) = 0;
+	//å‘é€æ•°æ®
+	virtual bool sendData(char* data, int len, NetEndpoint to) = 0;
 
-	//´«ÊäÊı¾İ¸økernel
-	virtual void transmitData(char* data, int len, unsigned long to) = 0;
+	//ä¼ è¾“æ•°æ®ç»™kernel
+	virtual void transmitData(char* data, int len, NetEndpoint to) = 0;
 
 protected:
 	INet* m_pNet;

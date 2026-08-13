@@ -10,30 +10,30 @@ public:
 	TCPServer(INetmediator* p);
 	~TCPServer();
 
-	//³õÊ¼»¯ÍøÂç
+	//åˆå§‹åŒ–ç½‘ç»œ
 	bool initNet();
 
-	//¹Ø±ÕÍøÂç
+	//å…³é—­ç½‘ç»œ
 	void unInitNet();
 
-	//·¢ËÍÊı¾İ
-	bool sendData(char* data, int len, u_long to);
+	//å‘é€æ•°æ®
+	bool sendData(char* data, int len, NetEndpoint to);
 
-	//½ÓÊÕÊı¾İ
+	//æ¥æ”¶æ•°æ®
 	void recvData();
 
-	//½ÓÊÕÁ¬½ÓµÄÏß³Ìº¯Êı
+	//æ¥æ”¶è¿æ¥çš„çº¿ç¨‹å‡½æ•°
 	static unsigned __stdcall acceptThread(void* lpVoid);
 
-	//½ÓÊÕÊı¾İµÄÏß³Ìº¯Êı
+	//æ¥æ”¶æ•°æ®çš„çº¿ç¨‹å‡½æ•°
 	static unsigned __stdcall recvThread(void* lpVoid);
 
 private:
-	//¶¨ÒåÒ»¸ö±£´æ·şÎñ¶ËµØÖ·ºÍ¶ÔÓ¦Ì×½Ó×ÖµÄÍ¼
-	//±£´æÏß³ÌidºÍ¶ÔÓ¦µÄsocket£¨Ò»¸öºÍÏß³ÌÖ»ÄÜÊ¹ÓÃÒ»¸ösocket£¬Òò´ËÒ»¸öÏß³ÌÖ»ÄÜ½ÓÊÕÒ»¸ö¿Í»§¶Ë£©
+	//å®šä¹‰ä¸€ä¸ªä¿å­˜æœåŠ¡ç«¯åœ°å€å’Œå¯¹åº”å¥—æ¥å­—çš„å›¾
+	//ä¿å­˜çº¿ç¨‹idå’Œå¯¹åº”çš„socketï¼ˆä¸€ä¸ªå’Œçº¿ç¨‹åªèƒ½ä½¿ç”¨ä¸€ä¸ªsocketï¼Œå› æ­¤ä¸€ä¸ªçº¿ç¨‹åªèƒ½æ¥æ”¶ä¸€ä¸ªå®¢æˆ·ç«¯ï¼‰
 	map<unsigned int, SOCKET> m_addrFrom;
-	//±£»¤ m_addrFrom µÄ²¢·¢·ÃÎÊ£¨acceptThread Ğ´ / recvThread ¶Á / unInitNet ±éÀú£©
+	//ä¿æŠ¤ m_addrFrom çš„å¹¶å‘è®¿é—®ï¼ˆacceptThread å†™ / recvThread è¯» / unInitNet éå†ï¼‰
 	mutex m_addrFromMutex;
-	//±£´æ½ÓÊÕÊı¾İµÄÏß³Ì¾ä±ú
+	//ä¿å­˜æ¥æ”¶æ•°æ®çš„çº¿ç¨‹å¥æŸ„
 	list<HANDLE> m_listHandle;
 };

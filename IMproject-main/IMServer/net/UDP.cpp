@@ -1,5 +1,6 @@
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 #include"UDP.h"
+#include <limits>
 #include"../mediator/UDPmediator.h"
 
 
@@ -12,11 +13,11 @@ UDP::~UDP()
 
 }
 
-//³õÊ¼»¯ÍøÂç£º¼ÓÔØ¿â£¬´´½¨Ì×½Ó×Ö£¬°ó¶¨£¬´´½¨½ÓÊÕÊı¾İµÄÏß³Ì
+//åˆå§‹åŒ–ç½‘ç»œï¼šåŠ è½½åº“ï¼Œåˆ›å»ºå¥—æ¥å­—ï¼Œç»‘å®šï¼Œåˆ›å»ºæ¥æ”¶æ•°æ®çš„çº¿ç¨‹
 bool UDP::initNet()
 {
-	//×¢Òâ£º1¡¢²»ÓÃ»ØÊÕ×ÊÔ´£¬Ê§°ÜÖ±½Óreturn false£»2¡¢´´½¨µÄÌ×½Ó×Ö¸³Öµ¸ø³ÉÔ±±äÁ¿
-	//1¡¢¼ÓÔØ¿â
+	//æ³¨æ„ï¼š1ã€ä¸ç”¨å›æ”¶èµ„æºï¼Œå¤±è´¥ç›´æ¥return falseï¼›2ã€åˆ›å»ºçš„å¥—æ¥å­—èµ‹å€¼ç»™æˆå‘˜å˜é‡
+	//1ã€åŠ è½½åº“
 	WORD version = MAKEWORD(2, 2);
 	WSADATA data = {  };
 	int err = WSAStartup(version, &data);
@@ -26,19 +27,19 @@ bool UDP::initNet()
 		return false;
 	}
 
-	//¼ÓÔØ¿â³É¹¦£¬ÅĞ¶Ï¿âµÄ°æ±¾ºÅÊÇ·ñÕıÈ·
+	//åŠ è½½åº“æˆåŠŸï¼Œåˆ¤æ–­åº“çš„ç‰ˆæœ¬å·æ˜¯å¦æ­£ç¡®
 	if (HIBYTE(data.wVersion) == 2 && LOBYTE(data.wVersion) == 2)
 	{
 		cout << "UDP::WSAStartup success!" << endl;
 	}
-	else   //ËäÈ»¼ÓÔØ¿â³É¹¦ÁË£¬µ«ÊÇ°æ±¾ºÅ²»ÕıÈ·
+	else   //è™½ç„¶åŠ è½½åº“æˆåŠŸäº†ï¼Œä½†æ˜¯ç‰ˆæœ¬å·ä¸æ­£ç¡®
 	{
 		cout << "UDP::WSAStartup error!" << endl;
 
 		return false;
 	}
 
-	//2¡¢´´½¨Ì×½Ó×Ö
+	//2ã€åˆ›å»ºå¥—æ¥å­—
 	m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (m_socket == INVALID_SOCKET)
 	{
@@ -50,16 +51,16 @@ bool UDP::initNet()
 		cout << "UDP::socket success!" << endl;
 	}
 
-	//3¡¢°ó¶¨
+	//3ã€ç»‘å®š
 	sockaddr_in saddr;
 	saddr.sin_family = AF_INET;
-	//Ä§¹íÊı×Ö£º³öÏÖÔÚ´úÂëÖĞµÄÊı×Ö,¶¨Òå³Éºê
+	//é­”é¬¼æ•°å­—ï¼šå‡ºç°åœ¨ä»£ç ä¸­çš„æ•°å­—,å®šä¹‰æˆå®
 	saddr.sin_port = htons(UDP_PORT);
 	saddr.sin_addr.S_un.S_addr = ADDR_ANY;
 	err = bind(m_socket, (sockaddr*)&saddr, sizeof(saddr));
 	if (err == SOCKET_ERROR)
 	{
-		cout << "UDP::bind error:" << WSAGetLastError()/*´òÓ¡´íÎóÂë*/ << endl;
+		cout << "UDP::bind error:" << WSAGetLastError()/*æ‰“å°é”™è¯¯ç */ << endl;
 		return false;
 	}
 	else
@@ -67,21 +68,21 @@ bool UDP::initNet()
 		cout << "UDP::bind success!" << endl;
 	}
 
-	//4¡¢´´½¨½ÓÊÕÊı¾İµÄÏß³Ì
-	//CreateThreadºÍExitThreadÊÇÒ»¶Ô£¬ExitThreadÔÚÍË³öµÄÊ±ºò²»»á»ØÊÕ×ÊÔ´
-	//Èç¹ûÏß³ÌÖĞÊ¹ÓÃC++ÔËĞĞÊ±¿âµÄº¯Êı£¬ÀıÈçstrcpy£¬¾Í»áÉêÇë¿Õ¼ä²»ÊÍ·Å£¬ÓÃExitThreadÍË³ö»áÔì³ÉÄÚ´æĞ¹Â¶
-	//_beginthreadexºÍ_endthreadexÊÇÒ»¶Ô£¬_endthreadex»áÏÈ»ØÊÕ×ÊÔ´£¬ÔÙµ÷ÓÃExitThread
-	m_handle = (HANDLE)_beginthreadex(nullptr/*Ïß³ÌµÄ°²È«¼¶±ğ£¬nullptr´ú±íÊ¹ÓÃÄ¬ÈÏ¼¶±ğ*/,
-									   0/*¶ÑÕ»´óĞ¡£¬0´ú±íÊ¹ÓÃÄ¬ÈÏ¶ÑÕ»´óĞ¡1M*/,
-									   &recvThread/*Ïß³Ìº¯ÊıµÄÆğÊ¼µØÖ·*/,
-									   this/*Ïß³Ìº¯ÊıµÄ²ÎÊıÁĞ±í*/,
-									   0/*Ïß³Ì³õÊ¼»¯±êÖ¾Î»£¬0´ú±í´´½¨¼´ÔËĞĞ*/,
-									   nullptr/*²Ù×÷ÏµÍ³¸ø·ÖÅäµÄÏß³Ìid£¬Êä³ö²ÎÊı£¬Èç¹û²»ĞèÒª¿ÉÒÔ²»½Ó*/);
+	//4ã€åˆ›å»ºæ¥æ”¶æ•°æ®çš„çº¿ç¨‹
+	//CreateThreadå’ŒExitThreadæ˜¯ä¸€å¯¹ï¼ŒExitThreadåœ¨é€€å‡ºçš„æ—¶å€™ä¸ä¼šå›æ”¶èµ„æº
+	//å¦‚æœçº¿ç¨‹ä¸­ä½¿ç”¨C++è¿è¡Œæ—¶åº“çš„å‡½æ•°ï¼Œä¾‹å¦‚strcpyï¼Œå°±ä¼šç”³è¯·ç©ºé—´ä¸é‡Šæ”¾ï¼Œç”¨ExitThreadé€€å‡ºä¼šé€ æˆå†…å­˜æ³„éœ²
+	//_beginthreadexå’Œ_endthreadexæ˜¯ä¸€å¯¹ï¼Œ_endthreadexä¼šå…ˆå›æ”¶èµ„æºï¼Œå†è°ƒç”¨ExitThread
+	m_handle = (HANDLE)_beginthreadex(nullptr/*çº¿ç¨‹çš„å®‰å…¨çº§åˆ«ï¼Œnullpträ»£è¡¨ä½¿ç”¨é»˜è®¤çº§åˆ«*/,
+									   0/*å †æ ˆå¤§å°ï¼Œ0ä»£è¡¨ä½¿ç”¨é»˜è®¤å †æ ˆå¤§å°1M*/,
+									   &recvThread/*çº¿ç¨‹å‡½æ•°çš„èµ·å§‹åœ°å€*/,
+									   this/*çº¿ç¨‹å‡½æ•°çš„å‚æ•°åˆ—è¡¨*/,
+									   0/*çº¿ç¨‹åˆå§‹åŒ–æ ‡å¿—ä½ï¼Œ0ä»£è¡¨åˆ›å»ºå³è¿è¡Œ*/,
+									   nullptr/*æ“ä½œç³»ç»Ÿç»™åˆ†é…çš„çº¿ç¨‹idï¼Œè¾“å‡ºå‚æ•°ï¼Œå¦‚æœä¸éœ€è¦å¯ä»¥ä¸æ¥*/);
 
 	return true;
 }
 
-//½ÓÊÕÊı¾İµÄÏß³Ìº¯Êı
+//æ¥æ”¶æ•°æ®çš„çº¿ç¨‹å‡½æ•°
 unsigned __stdcall UDP::recvThread(void* lpVoid)
 {
 	UDP* pThis = (UDP*)lpVoid;
@@ -89,53 +90,48 @@ unsigned __stdcall UDP::recvThread(void* lpVoid)
 	return 1;
 }
 
-//¹Ø±ÕÍøÂç(»ØÊÕÏß³Ì×ÊÔ´£¬¹Ø±ÕÌ×½Ó×Ö£¬Ğ¶ÔØ¿â)
+//å…³é—­ç½‘ç»œ(å›æ”¶çº¿ç¨‹èµ„æºï¼Œå…³é—­å¥—æ¥å­—ï¼Œå¸è½½åº“)
 void UDP::unInitNet()
 {
-	//²Ù×÷ÏµÍ³ÔÚ´´½¨Ïß³ÌµÄÊ±ºò»á¸øÃ¿¸öÏß³Ì·ÖÅä3¸ö×ÊÔ´£ºÏß³Ìid£¬¾ä±ú£¬ÄÚºË¶ÔÏó£¬ÒıÓÃ¼ÆÊıÆ÷ÊÇ2
-	// µ±ÒıÓÃ¼ÆÊıÆ÷Îª0µÄÊ±ºò£¬Ïß³Ì¾Í»á±»»ØÊÕ
+	m_bRunning = false;
+
+	// å…³é—­ socket ä¼šå”¤é†’é˜»å¡ä¸­çš„ recvfromï¼Œè®©æ¥æ”¶çº¿ç¨‹è‡ªç„¶é€€å‡ºã€‚
+	if (m_socket != INVALID_SOCKET)
+	{
+		closesocket(m_socket);
+		m_socket = INVALID_SOCKET;
+	}
+
 	if (m_handle)
 	{
-		//1¡¢»ØÊÕÏß³Ì×ÊÔ´
-	// //1.1 ½áÊøÏß³Ìº¯Êı
-		m_bRunning = false;
-		//µÈÒ»»á£¬Ïß³Ì×ßµ½ÅĞ¶ÏboolÖµµÄµØ·½£¬²ÅÄÜÍË³öwhileÑ­»·
-		if (WAIT_TIMEOUT /*µÈ´ı³¬Ê±£¬¾ÍÊÇÔÚµÈ´ıÊ±¼äµ½´ïµÄÊ±ºò£¬Ïß³Ì»¹Ã»½áÊø*/ ==
-			WaitForSingleObject(m_handle, 5000/*µÈ´ı5000ms*/))
-		{
-			//Ç¿ÖÆÉ±ËÀÏß³Ì£¬µ«ÊÇ²»ÒªÒ»¿ªÊ¼Ç¿ÖÆÉ±ËÀ
-			TerminateThread(m_handle/*É±ËÀÄÄ¸öÏß³Ì£¬ÌîµÄÊÇÏß³ÌµÄ¾ä±ú*/, -1/*ÍË³öÂë*/);
-		}
-		////1.2¡¢¹Ø±Õ¾ä±ú
+		WaitForSingleObject(m_handle, INFINITE);
 		CloseHandle(m_handle);
 		m_handle = nullptr;
 	}
 
-	//2¡¢¹Ø±ÕÌ×½Ó×Ö
-	if (m_socket && INVALID_SOCKET != m_socket)
-	{
-		closesocket(m_socket);
-	}
-
-	//3¡¢Ğ¶ÔØ¿â
 	WSACleanup();
 }
 
-//·¢ËÍÊı¾İ£º×èÈûº¯Êı
-bool UDP::sendData(char* data, int len, u_long to)
+//å‘é€æ•°æ®ï¼šé˜»å¡å‡½æ•°
+bool UDP::sendData(char* data, int len, NetEndpoint to)
 {
-	//1¡¢ÅĞ¶Ï²ÎÊıÊÇ·ñºÏ·¨
+	//1ã€åˆ¤æ–­å‚æ•°æ˜¯å¦åˆæ³•
 	if (!data || len < 0)
 	{
 		cout << "UDP::sendData error:" << WSAGetLastError() << endl;
 		return false;
 	}
+	if (to > (std::numeric_limits<ULONG>::max)())
+	{
+		cout << "UDP::sendData invalid IPv4 address" << endl;
+		return false;
+	}
 
-	//2¡¢·¢ËÍÊı¾İ
+	//2ã€å‘é€æ•°æ®
 	sockaddr_in saddrto;
 	saddrto.sin_family = AF_INET;
 	saddrto.sin_port = htons(UDP_PORT);
-	saddrto.sin_addr.S_un.S_addr = to;
+	saddrto.sin_addr.S_un.S_addr = static_cast<ULONG>(to);
 	int nsendNum = sendto(m_socket, data, len, 0, (sockaddr*)&saddrto, sizeof(saddrto));
 	if (SOCKET_ERROR == nsendNum)
 	{
@@ -145,7 +141,7 @@ bool UDP::sendData(char* data, int len, u_long to)
 	return true;
 }
 
-//½ÓÊÕÊı¾İ£º×èÈûº¯Êı
+//æ¥æ”¶æ•°æ®ï¼šé˜»å¡å‡½æ•°
 void UDP::recvData()
 {
 	int nRecvNum = 0;
@@ -157,11 +153,11 @@ void UDP::recvData()
 		nRecvNum = recvfrom(m_socket,recvBuf,sizeof(recvBuf),0,(sockaddr*)&addrFrom, &size);
 		if (nRecvNum > 0)
 		{
-			//½ÓÊÕ³É¹¦£¬NEWÒ»¸öĞÂ¿Õ¼ä
+			//æ¥æ”¶æˆåŠŸï¼ŒNEWä¸€ä¸ªæ–°ç©ºé—´
 			char* pack = new char[nRecvNum];
-			//°Ñ½ÓÊÕµ½µÄÊı¾İ¿½±´µ½ĞÂ¿Õ¼äÖĞ
+			//æŠŠæ¥æ”¶åˆ°çš„æ•°æ®æ‹·è´åˆ°æ–°ç©ºé—´ä¸­
 			memcpy_s(pack,nRecvNum,recvBuf, nRecvNum);
-			//°ÑĞÂ¿Õ¼äµÄÊı¾İ´«¸øÖĞ½éÕßÀà(packµÄ¿Õ¼äÔÚ´¦ÀíÍêÊı¾İÒÔºóÔÙ»ØÊÕ)
+			//æŠŠæ–°ç©ºé—´çš„æ•°æ®ä¼ ç»™ä¸­ä»‹è€…ç±»(packçš„ç©ºé—´åœ¨å¤„ç†å®Œæ•°æ®ä»¥åå†å›æ”¶)
 			m_mediator->transmitData(pack, nRecvNum, addrFrom.sin_addr.S_un.S_addr);
 		}
 		else

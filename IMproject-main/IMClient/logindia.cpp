@@ -133,6 +133,7 @@ void LoginDia::slots_clear()
 
 void LoginDia::closeEvent(QCloseEvent *event)
 {
+    Q_UNUSED(event);
     qDebug()<<" LoginDia::closeEvent ";
     emit signals_quitLogin();
 }

@@ -11,11 +11,11 @@ TCPClient::~TCPClient()
 
 }
 
-//³õÊ¼»¯ÍøÂç
+//åˆå§‹åŒ–ç½‘ç»œ
 bool TCPClient::initNet()
 {
-	//×¢Òâ£º1¡¢²»ÓÃ»ØÊÕ×ÊÔ´£¬Ê§°ÜÖ±½Óreturn false£»2¡¢´´½¨µÄÌ×½Ó×Ö¸³Öµ¸ø³ÉÔ±±äÁ¿
-	//1¡¢¼ÓÔØ¿â
+	//æ³¨æ„ï¼š1ã€ä¸ç”¨å›æ”¶èµ„æºï¼Œå¤±è´¥ç›´æ¥return falseï¼›2ã€åˆ›å»ºçš„å¥—æ¥å­—èµ‹å€¼ç»™æˆå‘˜å˜é‡
+	//1ã€åŠ è½½åº“
 	WORD version = MAKEWORD(2, 2);
 	WSADATA data = {  };
 	int err = WSAStartup(version, &data);
@@ -25,19 +25,19 @@ bool TCPClient::initNet()
 		return false;
 	}
 
-	//¼ÓÔØ¿â³É¹¦£¬ÅĞ¶Ï¿âµÄ°æ±¾ºÅÊÇ·ñÕıÈ·
+	//åŠ è½½åº“æˆåŠŸï¼Œåˆ¤æ–­åº“çš„ç‰ˆæœ¬å·æ˜¯å¦æ­£ç¡®
 	if (HIBYTE(data.wVersion) == 2 && LOBYTE(data.wVersion) == 2)
 	{
 		cout << "TCPClient::WSAStartup success!" << endl;
 	}
-	else   //ËäÈ»¼ÓÔØ¿â³É¹¦ÁË£¬µ«ÊÇ°æ±¾ºÅ²»ÕıÈ·
+	else   //è™½ç„¶åŠ è½½åº“æˆåŠŸäº†ï¼Œä½†æ˜¯ç‰ˆæœ¬å·ä¸æ­£ç¡®
 	{
 		cout << "TCPClient::WSAStartup error!" << endl;
 
 		return false;
 	}
 
-	//2¡¢´´½¨Ì×½Ó×Ö
+	//2ã€åˆ›å»ºå¥—æ¥å­—
 	m_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (m_socket == INVALID_SOCKET)
 	{
@@ -49,7 +49,7 @@ bool TCPClient::initNet()
 		cout << "TCPClient::socket success!" << endl;
 	}
 
-	//ÉêÇëÁ¬½Ó
+	//ç”³è¯·è¿æ¥
 	sockaddr_in saddr;
 	saddr.sin_family = AF_INET;
 	saddr.sin_port = htons(TCP_PORT);
@@ -57,7 +57,7 @@ bool TCPClient::initNet()
 	err = connect(m_socket, (sockaddr*)&saddr, sizeof(saddr));
 	if (err == SOCKET_ERROR)
 	{
-		cout << "TCPClient::connect error:" << WSAGetLastError()/*´òÓ¡´íÎóÂë*/ << endl;
+		cout << "TCPClient::connect error:" << WSAGetLastError()/*æ‰“å°é”™è¯¯ç */ << endl;
 		return false;
 	}
 	else
@@ -65,13 +65,13 @@ bool TCPClient::initNet()
 		cout << "TCPClient::connect success!" << endl;
 	}
 
-	//4¡¢´´½¨½ÓÊÕÊı¾İµÄÏß³Ì
+	//4ã€åˆ›å»ºæ¥æ”¶æ•°æ®çš„çº¿ç¨‹
 	m_handle = (HANDLE)_beginthreadex(nullptr, 0, &recvThread, this, 0, nullptr);
 
 	return true;
 }
 
-//½ÓÊÕÊı¾İµÄÏß³Ìº¯Êı
+//æ¥æ”¶æ•°æ®çš„çº¿ç¨‹å‡½æ•°
 unsigned __stdcall TCPClient::recvThread(void* lpVoid)
 {
 		TCPClient* pThis = (TCPClient*)lpVoid;
@@ -80,56 +80,47 @@ unsigned __stdcall TCPClient::recvThread(void* lpVoid)
 }
 
 
-//¹Ø±ÕÍøÂç£º»ØÊÕÏß³Ì×ÊÔ´£¬¹Ø±ÕÌ×½Ó×Ö£¬Ğ¶ÔØ¿â
+//å…³é—­ç½‘ç»œï¼šå›æ”¶çº¿ç¨‹èµ„æºï¼Œå…³é—­å¥—æ¥å­—ï¼Œå¸è½½åº“
 void TCPClient::unInitNet()
 {
-	//²Ù×÷ÏµÍ³ÔÚ´´½¨Ïß³ÌµÄÊ±ºò»á¸øÃ¿¸öÏß³Ì·ÖÅä3¸ö×ÊÔ´£ºÏß³Ìid£¬¾ä±ú£¬ÄÚºË¶ÔÏó£¬ÒıÓÃ¼ÆÊıÆ÷ÊÇ2
-	// µ±ÒıÓÃ¼ÆÊıÆ÷Îª0µÄÊ±ºò£¬Ïß³Ì¾Í»á±»»ØÊÕ
+	m_bRunning = false;
+
+	// å…³é—­ socket ä¼šå”¤é†’é˜»å¡ä¸­çš„ recvï¼Œè®©æ¥æ”¶çº¿ç¨‹è‡ªç„¶é€€å‡ºã€‚
+	if (m_socket != INVALID_SOCKET)
+	{
+		shutdown(m_socket, SD_BOTH);
+		closesocket(m_socket);
+		m_socket = INVALID_SOCKET;
+	}
+
 	if (m_handle)
 	{
-		//1¡¢»ØÊÕÏß³Ì×ÊÔ´
-	// //1.1 ½áÊøÏß³Ìº¯Êı
-		m_bRunning = false;
-		//µÈÒ»»á£¬Ïß³Ì×ßµ½ÅĞ¶ÏboolÖµµÄµØ·½£¬²ÅÄÜÍË³öwhileÑ­»·
-		if (WAIT_TIMEOUT /*µÈ´ı³¬Ê±£¬¾ÍÊÇÔÚµÈ´ıÊ±¼äµ½´ïµÄÊ±ºò£¬Ïß³Ì»¹Ã»½áÊø*/ ==
-			WaitForSingleObject(m_handle, 5000/*µÈ´ı5000ms*/))
-		{
-			//Ç¿ÖÆÉ±ËÀÏß³Ì£¬µ«ÊÇ²»ÒªÒ»¿ªÊ¼Ç¿ÖÆÉ±ËÀ
-			TerminateThread(m_handle/*É±ËÀÄÄ¸öÏß³Ì£¬ÌîµÄÊÇÏß³ÌµÄ¾ä±ú*/, -1/*ÍË³öÂë*/);
-		}
-		////1.2¡¢¹Ø±Õ¾ä±ú
+		WaitForSingleObject(m_handle, INFINITE);
 		CloseHandle(m_handle);
 		m_handle = nullptr;
 	}
 
-	//2¡¢¹Ø±ÕÌ×½Ó×Ö
-	if (m_socket && INVALID_SOCKET != m_socket)
-	{
-		closesocket(m_socket);
-	}
-
-	//3¡¢Ğ¶ÔØ¿â
 	WSACleanup();
 }
 
-//·¢ËÍÊı¾İ
-bool TCPClient::sendData(char* data, int len, u_long to)
+//å‘é€æ•°æ®
+bool TCPClient::sendData(char* data, int len, NetEndpoint to)
 {
-	// 1¡¢Ğ£Ñé²ÎÊıºÏ·¨ĞÔ
+	// 1ã€æ ¡éªŒå‚æ•°åˆæ³•æ€§
 	if (!data || len < 1) 
 	{
 		cout << "TcpClient::sendData paramater error" << endl;
 		return false;
 	}
 
-	// 2¡¢ÏÈ·¢°ü³¤¶Èlen
+	// 2ã€å…ˆå‘åŒ…é•¿åº¦len
 	int nSendNum = send(m_socket, (char*)&len, sizeof(len), 0);
 	if (SOCKET_ERROR == nSendNum)
 	{
 		cout << "TcpClient::sendData sendto len error:" << WSAGetLastError() << endl;
 		return false;
 	}
-	// 3¡¢ÔÙ·¢°üÊı¾İdata
+	// 3ã€å†å‘åŒ…æ•°æ®data
 	nSendNum = send(m_socket, data, len, 0);
 	if (SOCKET_ERROR == nSendNum)
 	{
@@ -140,30 +131,30 @@ bool TCPClient::sendData(char* data, int len, u_long to)
 	return true;
 }
 
-//½ÓÊÕÊı¾İ
+//æ¥æ”¶æ•°æ®
 void TCPClient::recvData()
 {
 	int offset = 0; //
 	int nRecvNum = 0;
 	int RecvLen = 0;
 	while (m_bRunning) {
-		offset = 0;  //Çå¿Õ°ü³¤¶È
+		offset = 0;  //æ¸…ç©ºåŒ…é•¿åº¦
 
-		// 1¡¢ÏÈÊÕ°ü³¤¶È
+		// 1ã€å…ˆæ”¶åŒ…é•¿åº¦
 		nRecvNum = recv(m_socket, (char*)&RecvLen, sizeof(RecvLen),0);
 		if (nRecvNum > 0)
 		{
-			// 2¡¢½ÓÊÕ°ü³¤¶È³É¹¦£¬ÔÙ½ÓÊÕ°üÊı¾İ
+			// 2ã€æ¥æ”¶åŒ…é•¿åº¦æˆåŠŸï¼Œå†æ¥æ”¶åŒ…æ•°æ®
 			char* pack = new char[RecvLen];
-			//¿ªÊ¼½ÓÊÕÒ»¸ö°üµÄÊı¾İ
+			//å¼€å§‹æ¥æ”¶ä¸€ä¸ªåŒ…çš„æ•°æ®
 			while (RecvLen > 0)
 			{
 				nRecvNum = recv(m_socket, pack + offset, RecvLen, 0);
 				if (nRecvNum > 0)
 				{
-					// ½ÓÊÕÒ»¸öĞ¡°üÊı¾İ³É¹¦
-					offset += nRecvNum;    //¼ÇÂ¼ÀÛ¼Æ½ÓÊÕµ½µÄÊı¾İ
-					RecvLen -= nRecvNum;   //¼ÇÂ¼¿Õ¼äÊ£Óà´óĞ¡
+					// æ¥æ”¶ä¸€ä¸ªå°åŒ…æ•°æ®æˆåŠŸ
+					offset += nRecvNum;    //è®°å½•ç´¯è®¡æ¥æ”¶åˆ°çš„æ•°æ®
+					RecvLen -= nRecvNum;   //è®°å½•ç©ºé—´å‰©ä½™å¤§å°
 				}
 				else
 				{
@@ -171,7 +162,7 @@ void TCPClient::recvData()
 					break;
 				}
 			}
-			//Ò»¸ö°üÊı¾İ½ÓÊÕÍê³É£¬°ÑÊı¾İ´«¸øÖĞ½éÕßÀà£¬offsetÊÇµ±Ç°½ÓÊÕµ½µÄÊı¾İ³¤¶È
+			//ä¸€ä¸ªåŒ…æ•°æ®æ¥æ”¶å®Œæˆï¼ŒæŠŠæ•°æ®ä¼ ç»™ä¸­ä»‹è€…ç±»ï¼Œoffsetæ˜¯å½“å‰æ¥æ”¶åˆ°çš„æ•°æ®é•¿åº¦
 			m_mediator->transmitData(pack, offset, m_socket);
 		}
 		else 

@@ -11,10 +11,10 @@ TCPServer::~TCPServer()
 
 }
 
-//³õÊ¼»¯ÍøÂç:¼ÓÔØ¿â£¬´´½¨Ì×½Ó×ÖTCP£¬°ó¶¨£¬¼àÌı£¬´´½¨½ÓÊÕÁ¬½ÓµÄÏß³Ì£¬½ÓÊÕÁ¬½Ó£¨Ñ­»·£©
+//åˆå§‹åŒ–ç½‘ç»œ:åŠ è½½åº“ï¼Œåˆ›å»ºå¥—æ¥å­—TCPï¼Œç»‘å®šï¼Œç›‘å¬ï¼Œåˆ›å»ºæ¥æ”¶è¿æ¥çš„çº¿ç¨‹ï¼Œæ¥æ”¶è¿æ¥ï¼ˆå¾ªç¯ï¼‰
 bool TCPServer::initNet()
 {
-	//1¡¢¼ÓÔØ¿â
+	//1ã€åŠ è½½åº“
 	WORD version = MAKEWORD(2, 2);
 	WSADATA data = {  };
 	int err = WSAStartup(version, &data);
@@ -24,19 +24,19 @@ bool TCPServer::initNet()
 		return false;
 	}
 
-	//¼ÓÔØ¿â³É¹¦£¬ÅĞ¶Ï¿âµÄ°æ±¾ºÅÊÇ·ñÕıÈ·
+	//åŠ è½½åº“æˆåŠŸï¼Œåˆ¤æ–­åº“çš„ç‰ˆæœ¬å·æ˜¯å¦æ­£ç¡®
 	if (HIBYTE(data.wVersion) == 2 && LOBYTE(data.wVersion) == 2)
 	{
 		cout << "TCPServer::WSAStartup success!" << endl;
 	}
-	else   //ËäÈ»¼ÓÔØ¿â³É¹¦ÁË£¬µ«ÊÇ°æ±¾ºÅ²»ÕıÈ·
+	else   //è™½ç„¶åŠ è½½åº“æˆåŠŸäº†ï¼Œä½†æ˜¯ç‰ˆæœ¬å·ä¸æ­£ç¡®
 	{
 		cout << "TCPServer::WSAStartup error!" << endl;
 
 		return false;
 	}
 
-	//2¡¢´´½¨Ì×½Ó×Ö
+	//2ã€åˆ›å»ºå¥—æ¥å­—
 	m_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (m_socket == INVALID_SOCKET)
 	{
@@ -48,35 +48,35 @@ bool TCPServer::initNet()
 		cout << "TCPServer::socket success!" << endl;
 	}
 
-	//3¡¢°ó¶¨
+	//3ã€ç»‘å®š
 	sockaddr_in saddr;
 	saddr.sin_family = AF_INET;
 	saddr.sin_port = htons(TCP_PORT);
 	saddr.sin_addr.S_un.S_addr = ADDR_ANY;
-	err = bind(m_socket, (sockaddr*)&saddr, sizeof(saddr));
+	err = ::bind(m_socket, (sockaddr*)&saddr, sizeof(saddr));
 	if (err == SOCKET_ERROR)
 	{
-		cout << "TCPServer::bind error:" << WSAGetLastError()/*´òÓ¡´íÎóÂë*/ << endl;
+		cout << "TCPServer::bind error:" << WSAGetLastError()/*æ‰“å°é”™è¯¯ç */ << endl;
 		return false;
 	}
 	else
 	{
 		cout << "TCPServer::bind success!" << endl;
 	}
-	//¼àÌı
+	//ç›‘å¬
 	err = listen(m_socket, TCP_LISTEN_QUEUE_LEN);
 	if (err == SOCKET_ERROR)
 	{
-		cout << "TCPServer::listen error:" << WSAGetLastError()/*´òÓ¡´íÎóÂë*/ << endl;
+		cout << "TCPServer::listen error:" << WSAGetLastError()/*æ‰“å°é”™è¯¯ç */ << endl;
 		return false;
 	}
-	//´´½¨½ÓÊÕÁ¬½ÓµÄÏß³Ì
+	//åˆ›å»ºæ¥æ”¶è¿æ¥çš„çº¿ç¨‹
 	m_handle = (HANDLE)_beginthreadex(nullptr, 0, &acceptThread, this, 0, nullptr);
 
 	return true;
 }
 
-//½ÓÊÕÁ¬½ÓµÄÏß³Ìº¯Êı£¨Ñ­»·½ÓÊÕÁ¬½Ó£©
+//æ¥æ”¶è¿æ¥çš„çº¿ç¨‹å‡½æ•°ï¼ˆå¾ªç¯æ¥æ”¶è¿æ¥ï¼‰
 unsigned __stdcall TCPServer::acceptThread(void* lpVoid)
 {
 	sockaddr_in addrClient = {};
@@ -90,13 +90,13 @@ unsigned __stdcall TCPServer::acceptThread(void* lpVoid)
 		sock_accept = accept(pThis->m_socket, (sockaddr*)&addrClient, &addrsize);
 		if (sock_accept == INVALID_SOCKET)
 		{
-			cout << "TCPServer::accept error:" << WSAGetLastError()/*´òÓ¡´íÎóÂë*/ << endl;
+			cout << "TCPServer::accept error:" << WSAGetLastError()/*æ‰“å°é”™è¯¯ç */ << endl;
 		}
 		else
 		{
-			//Á¬½Ó³É¹¦
-			cout << "clien ip£º" << inet_ntoa(addrClient.sin_addr) << endl;
-			//¸øÁ´½Ó³É¹¦µÄclient´´½¨Ò»¸ö½ÓÊÕÊı¾İµÄÏß³Ì
+			//è¿æ¥æˆåŠŸ
+			cout << "Client IP: " << inet_ntoa(addrClient.sin_addr) << endl;
+			//ç»™é“¾æ¥æˆåŠŸçš„clientåˆ›å»ºä¸€ä¸ªæ¥æ”¶æ•°æ®çš„çº¿ç¨‹
 			handle = (HANDLE)_beginthreadex(nullptr, 0, &recvThread, pThis, 0, &threadid);
 			if (handle)
 			{
@@ -111,7 +111,7 @@ unsigned __stdcall TCPServer::acceptThread(void* lpVoid)
 	return 1;
 }
 
-//½ÓÊÕÊı¾İµÄÏß³Ìº¯Êı
+//æ¥æ”¶æ•°æ®çš„çº¿ç¨‹å‡½æ•°
 unsigned __stdcall TCPServer::recvThread(void* lpVoid)
 {
 	TCPServer* pThis = (TCPServer*)lpVoid;
@@ -119,87 +119,64 @@ unsigned __stdcall TCPServer::recvThread(void* lpVoid)
 	return 1;
 }
 
-//¹Ø±ÕÍøÂç£º»ØÊÕÏß³Ì×ÊÔ´£¬¹Ø±ÕÌ×½Ó×Ö£¬Ğ¶ÔØ¿â
+//å…³é—­ç½‘ç»œï¼šå›æ”¶çº¿ç¨‹èµ„æºï¼Œå…³é—­å¥—æ¥å­—ï¼Œå¸è½½åº“
 void TCPServer::unInitNet()
 {
+	m_bRunning = false;
+
+	// å…ˆå…³é—­ç›‘å¬ socketï¼Œå”¤é†’é˜»å¡ä¸­çš„ acceptã€‚
+	if (m_socket != INVALID_SOCKET)
+	{
+		closesocket(m_socket);
+		m_socket = INVALID_SOCKET;
+	}
+
 	if (m_handle)
 	{
-		//1¡¢»ØÊÕÏß³Ì×ÊÔ´
-	// //1.1 ½áÊøÏß³Ìº¯Êı
-		m_bRunning = false;
-		//µÈÒ»»á£¬Ïß³Ì×ßµ½ÅĞ¶ÏboolÖµµÄµØ·½£¬²ÅÄÜÍË³öwhileÑ­»·
-		if (WAIT_TIMEOUT /*µÈ´ı³¬Ê±£¬¾ÍÊÇÔÚµÈ´ıÊ±¼äµ½´ïµÄÊ±ºò£¬Ïß³Ì»¹Ã»½áÊø*/ ==
-			WaitForSingleObject(m_handle, 5000/*µÈ´ı5000ms*/))
-		{
-			//Ç¿ÖÆÉ±ËÀÏß³Ì£¬µ«ÊÇ²»ÒªÒ»¿ªÊ¼Ç¿ÖÆÉ±ËÀ
-			TerminateThread(m_handle/*É±ËÀÄÄ¸öÏß³Ì£¬ÌîµÄÊÇÏß³ÌµÄ¾ä±ú*/, -1/*ÍË³öÂë*/);
-		}
-		////1.2¡¢¹Ø±Õ¾ä±ú
+		WaitForSingleObject(m_handle, INFINITE);
 		CloseHandle(m_handle);
 		m_handle = nullptr;
 	}
 
-	//¾ä±úÁ´±í
-	HANDLE h = nullptr;
-	for (auto ite = m_listHandle.begin(); ite != m_listHandle.end();)
-	{
-		h = *ite;
-		if (h)
-		{
-			//1¡¢»ØÊÕÏß³Ì×ÊÔ´
-		// //1.1 ½áÊøÏß³Ìº¯Êı
-			m_bRunning = false;
-			//µÈÒ»»á£¬Ïß³Ì×ßµ½ÅĞ¶ÏboolÖµµÄµØ·½£¬²ÅÄÜÍË³öwhileÑ­»·
-			if (WAIT_TIMEOUT /*µÈ´ı³¬Ê±£¬¾ÍÊÇÔÚµÈ´ıÊ±¼äµ½´ïµÄÊ±ºò£¬Ïß³Ì»¹Ã»½áÊø*/ ==
-				WaitForSingleObject(h, 5000/*µÈ´ı5000ms*/))
-			{
-				//Ç¿ÖÆÉ±ËÀÏß³Ì£¬µ«ÊÇ²»ÒªÒ»¿ªÊ¼Ç¿ÖÆÉ±ËÀ
-				TerminateThread(h/*É±ËÀÄÄ¸öÏß³Ì£¬ÌîµÄÊÇÏß³ÌµÄ¾ä±ú*/, -1/*ÍË³öÂë*/);
-			}
-			////1.2¡¢¹Ø±Õ¾ä±ú
-			CloseHandle(h);
-			m_handle = nullptr;
-		}
-		ite = m_listHandle.erase(ite);
-	}
-
-	//2¡¢¹Ø±ÕÌ×½Ó×Ö
-	if (m_socket && INVALID_SOCKET != m_socket)
-	{
-		closesocket(m_socket);
-	}
-
-	//Í¼ÖĞ¹Ø±ÕÌ×½Ó×Ö£¨¼ÓËøºó±éÀú¹Ø±Õ²¢Çå¿Õ£©
+	// å…³é—­å…¨éƒ¨å®¢æˆ·ç«¯ socketï¼Œå”¤é†’å¯¹åº” recv çº¿ç¨‹ã€‚
 	{
 		lock_guard<mutex> lock(m_addrFromMutex);
-		SOCKET ss = INVALID_SOCKET;
-		for (auto ite = m_addrFrom.begin(); ite != m_addrFrom.end();)
+		for (const auto& entry : m_addrFrom)
 		{
-			ss = ite->second;
-			if (ss && INVALID_SOCKET != ss)
+			if (entry.second != INVALID_SOCKET)
 			{
-				closesocket(ss);
+				shutdown(entry.second, SD_BOTH);
+				closesocket(entry.second);
 			}
-			ite = m_addrFrom.erase(ite);
 		}
+		m_addrFrom.clear();
 	}
 
-	//3¡¢Ğ¶ÔØ¿â
+	for (HANDLE handle : m_listHandle)
+	{
+		if (handle)
+		{
+			WaitForSingleObject(handle, INFINITE);
+			CloseHandle(handle);
+		}
+	}
+	m_listHandle.clear();
+
 	WSACleanup();
 }
 
-//·¢ËÍÊı¾İ
-bool TCPServer::sendData(char* data, int len, u_long to)
+//å‘é€æ•°æ®
+bool TCPServer::sendData(char* data, int len, NetEndpoint to)
 {
-	//×¢ÒâsocketÓ¦¸ÃÌîÊ²Ã´
-	// 1¡¢Ğ£Ñé²ÎÊıºÏ·¨ĞÔ
+	//æ³¨æ„socketåº”è¯¥å¡«ä»€ä¹ˆ
+	// 1ã€æ ¡éªŒå‚æ•°åˆæ³•æ€§
 	if (!data || len < 1)
 	{
 		cout << "TCPServer::sendData paramater error" << endl;
 		return false;
 	}
 
-	// 1.1 ³¤¶ÈÉÏÏŞ±£»¤£¨·ÀÖ¹ÒµÎñ²ãÎó´«³¬´ó°ü£©
+	// 1.1 é•¿åº¦ä¸Šé™ä¿æŠ¤ï¼ˆé˜²æ­¢ä¸šåŠ¡å±‚è¯¯ä¼ è¶…å¤§åŒ…ï¼‰
 	if (len > MAX_PACK_LEN)
 	{
 		cout << "TCPServer::sendData len over MAX_PACK_LEN:" << len << endl;
@@ -208,7 +185,7 @@ bool TCPServer::sendData(char* data, int len, u_long to)
 
 	SOCKET sockTo = (SOCKET)to;
 
-	// 2¡¢ÏÈ·¢°ü³¤¶Èlen£¨Í³Ò»×ªÍøÂç×Ö½ÚĞò´ó¶Ë£¬¿çÆ½Ì¨Ò»ÖÂ£©
+	// 2ã€å…ˆå‘åŒ…é•¿åº¦lenï¼ˆç»Ÿä¸€è½¬ç½‘ç»œå­—èŠ‚åºå¤§ç«¯ï¼Œè·¨å¹³å°ä¸€è‡´ï¼‰
 	int netLen = htonl(len);
 	int nSendNum = send(sockTo, (char*)&netLen, sizeof(netLen), 0);
 	if (SOCKET_ERROR == nSendNum)
@@ -216,7 +193,7 @@ bool TCPServer::sendData(char* data, int len, u_long to)
 		cout << "TCPServer::sendData sendto len error:" << WSAGetLastError() << endl;
 		return false;
 	}
-	// 3¡¢ÔÙ·¢°üÊı¾İdata
+	// 3ã€å†å‘åŒ…æ•°æ®data
 	nSendNum = send(sockTo, data, len, 0);
 	if (SOCKET_ERROR == nSendNum)
 	{
@@ -227,17 +204,17 @@ bool TCPServer::sendData(char* data, int len, u_long to)
 	return true;
 }
 
-//½ÓÊÕÊı¾İ
+//æ¥æ”¶æ•°æ®
 void TCPServer::recvData()
 {
-	//ĞİÃßÒ»»á£ºÎªÁË±£Ö¤acceptTheardÄÜ¹»ÔËĞĞµ½ÏòmapÖĞ±£´æthreadidµÄÄÇĞĞ´úÂë
+	//ä¼‘çœ ä¸€ä¼šï¼šä¸ºäº†ä¿è¯acceptTheardèƒ½å¤Ÿè¿è¡Œåˆ°å‘mapä¸­ä¿å­˜threadidçš„é‚£è¡Œä»£ç 
 	Sleep(5);
 
-	//È¡³öµ±Ç°Ïß³Ì¶ÔÓ¦µÄsocket
-	//»ñÈ¡µ±Ç°Ïß³ÌµÄid
+	//å–å‡ºå½“å‰çº¿ç¨‹å¯¹åº”çš„socket
+	//è·å–å½“å‰çº¿ç¨‹çš„id
 	unsigned int threadId = GetCurrentThreadId();
 	SOCKET s = INVALID_SOCKET;
-	//´ÓmapÖĞÈ¡³öid¶ÔÓ¦µÄsocket£¨¼ÓËø£¬ÓÃ find Ò»´ÎĞÔ»ñÈ¡£¬±ÜÃâ count+[] µÄ TOCTOU£©
+	//ä»mapä¸­å–å‡ºidå¯¹åº”çš„socketï¼ˆåŠ é”ï¼Œç”¨ find ä¸€æ¬¡æ€§è·å–ï¼Œé¿å… count+[] çš„ TOCTOUï¼‰
 	{
 		lock_guard<mutex> lock(m_addrFromMutex);
 		auto it = m_addrFrom.find(threadId);
@@ -248,65 +225,87 @@ void TCPServer::recvData()
 	}
 	if (s == INVALID_SOCKET)
 	{
-		//ËµÃ÷£ºacceptThreadÏß³Ì¿ÉÄÜÃ»´´½¨
+		//è¯´æ˜ï¼šacceptThreadçº¿ç¨‹å¯èƒ½æ²¡åˆ›å»º
 		cout << "TCPServer::recvData socket error" << endl;
 		return;
 	}
 
-	//ÏÈ½ÓÊÜÊı¾İ³¤¶È£¬ÔÚ½ÓÊÕÊı¾İÄÚÈİ
+	//å…ˆæ¥å—æ•°æ®é•¿åº¦ï¼Œåœ¨æ¥æ”¶æ•°æ®å†…å®¹
 	int offset = 0; //
 	int nRecvNum = 0;
 	int RecvLen = 0;
 	while (m_bRunning) {
-		offset = 0;  //Çå¿Õ°ü³¤¶È
+		offset = 0;  //æ¸…ç©ºåŒ…é•¿åº¦
 
-		// 1¡¢ÏÈÊÕ°ü³¤¶È£¨4×Ö½Ú£©
+		// 1ã€å…ˆæ”¶åŒ…é•¿åº¦ï¼ˆ4å­—èŠ‚ï¼‰
 		nRecvNum = recv(s, (char*)&RecvLen, sizeof(RecvLen), 0);
 		if (nRecvNum > 0)
 		{
-			// 1.1 ÍøÂç×Ö½ÚĞò×ªÖ÷»úĞò
+			// 1.1 ç½‘ç»œå­—èŠ‚åºè½¬ä¸»æœºåº
 			RecvLen = ntohl(RecvLen);
 
-			// 1.2 ³¤¶ÈÉÏÏŞ±£»¤£¨·ÀÖ¹Òì³£/¶ñÒâ³¬´ó RecvLen µ¼ÖÂ OOM/DoS£©
+			// 1.2 é•¿åº¦ä¸Šé™ä¿æŠ¤ï¼ˆé˜²æ­¢å¼‚å¸¸/æ¶æ„è¶…å¤§ RecvLen å¯¼è‡´ OOM/DoSï¼‰
 			if (RecvLen <= 0 || RecvLen > MAX_PACK_LEN)
 			{
 				cout << "TCPServer::recvData illegal RecvLen:" << RecvLen << endl;
 				break;
 			}
 
-			// 2¡¢½ÓÊÕ°ü³¤¶È³É¹¦£¬ÔÙ½ÓÊÕ°üÊı¾İ
+			// 2ã€æ¥æ”¶åŒ…é•¿åº¦æˆåŠŸï¼Œå†æ¥æ”¶åŒ…æ•°æ®
 			char* pack = new char[RecvLen];
-			//¿ªÊ¼½ÓÊÕÒ»¸ö°üµÄÊı¾İ
+			//å¼€å§‹æ¥æ”¶ä¸€ä¸ªåŒ…çš„æ•°æ®
 			while (RecvLen > 0)
 			{
 				nRecvNum = recv(s, pack + offset, RecvLen, 0);
 				if (nRecvNum > 0)
 				{
-					// ½ÓÊÕÒ»¸öĞ¡°üÊı¾İ³É¹¦
-					offset += nRecvNum;    //¼ÇÂ¼ÀÛ¼Æ½ÓÊÕµ½µÄÊı¾İ
-					RecvLen -= nRecvNum;   //¼ÇÂ¼¿Õ¼äÊ£Óà´óĞ¡
+					// æ¥æ”¶ä¸€ä¸ªå°åŒ…æ•°æ®æˆåŠŸ
+					offset += nRecvNum;    //è®°å½•ç´¯è®¡æ¥æ”¶åˆ°çš„æ•°æ®
+					RecvLen -= nRecvNum;   //è®°å½•ç©ºé—´å‰©ä½™å¤§å°
 				}
 				else
 				{
-					cout << "TCPServer::recvData Data error:" << WSAGetLastError() << endl;
-					delete[] pack;  //Òì³£ÍË³öÇ°ÊÍ·ÅÒÑ·ÖÅäÄÚ´æ
+					if (nRecvNum == 0)
+					{
+						cout << "Client disconnected while receiving packet" << endl;
+					}
+					else
+					{
+						const int error = WSAGetLastError();
+						if (error != WSAENOTSOCK && error != WSA_OPERATION_ABORTED)
+						{
+							cout << "TCPServer::recvData payload error: " << error << endl;
+						}
+					}
+					delete[] pack;  //å¼‚å¸¸é€€å‡ºå‰é‡Šæ”¾å·²åˆ†é…å†…å­˜
 					break;
 				}
 			}
 			if (RecvLen == 0)
 			{
-				//Ò»¸ö°üÊı¾İ½ÓÊÕÍê³É£¬°ÑÊı¾İ´«¸øÖĞ½éÕßÀà£¬offsetÊÇµ±Ç°½ÓÊÕµ½µÄÊı¾İ³¤¶È
+				//ä¸€ä¸ªåŒ…æ•°æ®æ¥æ”¶å®Œæˆï¼ŒæŠŠæ•°æ®ä¼ ç»™ä¸­ä»‹è€…ç±»ï¼Œoffsetæ˜¯å½“å‰æ¥æ”¶åˆ°çš„æ•°æ®é•¿åº¦
 				m_mediator->transmitData(pack, offset, s);
 			}
 			else
 			{
-				// RecvLen != 0 ËµÃ÷ÊÇÒì³£ break ³öÀ´µÄ£¬pack ÒÑÔÚÉÏÃæ delete
+				// RecvLen != 0 è¯´æ˜æ˜¯å¼‚å¸¸ break å‡ºæ¥çš„ï¼Œpack å·²åœ¨ä¸Šé¢ delete
 				pack = nullptr;
 			}
 		}
 		else
 		{
-			cout << "TCPServer::recvData Len error:" << WSAGetLastError() << endl;
+			if (nRecvNum == 0)
+			{
+				cout << "Client disconnected" << endl;
+			}
+			else
+			{
+				const int error = WSAGetLastError();
+				if (error != WSAENOTSOCK && error != WSA_OPERATION_ABORTED)
+				{
+					cout << "TCPServer::recvData header error: " << error << endl;
+				}
+			}
 			break;
 		}
 

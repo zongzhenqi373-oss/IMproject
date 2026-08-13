@@ -3,14 +3,15 @@
 
 
 CMySql::CMySql(void)
+    : m_sock(nullptr), m_results(nullptr), m_record(nullptr)
 {
-    /*Õâ¸öº¯ÊıÓÃÀ´·ÖÅä»òÕß³õÊ¼»¯Ò»¸öMYSQL¶ÔÏó£¬ÓÃÓÚÁ¬½Ómysql·şÎñ¶Ë¡£
-    Èç¹ûÄã´«ÈëµÄ²ÎÊıÊÇNULLÖ¸Õë£¬Ëü½«×Ô¶¯ÎªÄã·ÖÅäÒ»¸öMYSQL¶ÔÏó£¬
-    Èç¹ûÕâ¸öMYSQL¶ÔÏóÊÇËü×Ô¶¯·ÖÅäµÄ£¬ÄÇÃ´ÔÚµ÷ÓÃmysql_closeµÄÊ±ºò£¬»áÊÍ·ÅÕâ¸ö¶ÔÏó*/
+    /*è¿™ä¸ªå‡½æ•°ç”¨æ¥åˆ†é…æˆ–è€…åˆå§‹åŒ–ä¸€ä¸ªMYSQLå¯¹è±¡ï¼Œç”¨äºè¿æ¥mysqlæœåŠ¡ç«¯ã€‚
+    å¦‚æœä½ ä¼ å…¥çš„å‚æ•°æ˜¯NULLæŒ‡é’ˆï¼Œå®ƒå°†è‡ªåŠ¨ä¸ºä½ åˆ†é…ä¸€ä¸ªMYSQLå¯¹è±¡ï¼Œ
+    å¦‚æœè¿™ä¸ªMYSQLå¯¹è±¡æ˜¯å®ƒè‡ªåŠ¨åˆ†é…çš„ï¼Œé‚£ä¹ˆåœ¨è°ƒç”¨mysql_closeçš„æ—¶å€™ï¼Œä¼šé‡Šæ”¾è¿™ä¸ªå¯¹è±¡*/
     m_sock = new MYSQL;
     mysql_init(m_sock);
-    //È«Á´Â·Í³Ò» UTF-8£¨utf8mb4 Ö§³Ö 4 ×Ö½Ú emoji£¬Óë¿Í»§¶Ë QString::toUtf8/fromUtf8 ¶ÔÆë£©
-    //×¢Òâ£ºMySQL ±í/ÁĞ×Ö·û¼¯Ò²ĞèÎª utf8mb4£¬¼û docs/im_multiplatform_roadmap.md ½×¶Î-1 ÑéÖ¤Çåµ¥
+    //å…¨é“¾è·¯ç»Ÿä¸€ UTF-8ï¼ˆutf8mb4 æ”¯æŒ 4 å­—èŠ‚ emojiï¼Œä¸å®¢æˆ·ç«¯ QString::toUtf8/fromUtf8 å¯¹é½ï¼‰
+    //æ³¨æ„ï¼šMySQL è¡¨/åˆ—å­—ç¬¦é›†ä¹Ÿéœ€ä¸º utf8mb4ï¼Œè§ docs/im_multiplatform_roadmap.md é˜¶æ®µ-1 éªŒè¯æ¸…å•
     mysql_set_character_set(m_sock, "utf8mb4");
 }
 
@@ -31,8 +32,8 @@ void CMySql::DisConnect()
 bool CMySql::ConnectMySql(char *host, char *user, char *pass, char *db, short nport)
 {
 	if (!mysql_real_connect(m_sock, host, user, pass, db, nport, NULL, CLIENT_MULTI_STATEMENTS)) {
-		cout << "Á¬½ÓÊı¾İ¿âÊ§°Ü£¬Ê§°Ü´íÔ­Òò£º" << mysql_error(m_sock);
-        //Á¬½Ó´íÎó
+		cout << "è¿æ¥æ•°æ®åº“å¤±è´¥ï¼Œå¤±è´¥é”™åŸå› ï¼š" << mysql_error(m_sock);
+        //è¿æ¥é”™è¯¯
 		return false;
 	}
     return true;
@@ -54,25 +55,25 @@ bool CMySql::ConnectMySql(char *host, char *user, char *pass, char *db, short np
  }
 bool CMySql::SelectMySql(char* szSql, int nColumn, list<string>& lstStr)
 {
-    //mysql_query() º¯ÊıÓÃÓÚÏò MySQL ·¢ËÍ²¢Ö´ĞĞ SQL Óï¾ä
+    //mysql_query() å‡½æ•°ç”¨äºå‘ MySQL å‘é€å¹¶æ‰§è¡Œ SQL è¯­å¥
 	if(mysql_query(m_sock, szSql)) {
-		cout << "²éÑ¯Êı¾İ¿âÊ§°Ü£¬Ê§°Ü´íÔ­Òò£º" << mysql_error(m_sock);
+		cout << "æŸ¥è¯¢æ•°æ®åº“å¤±è´¥ï¼Œå¤±è´¥é”™åŸå› ï¼š" << mysql_error(m_sock);
 		return false;
 	}
 
-     /*¡¤mysql_store_result ¶ÔÓÚ³É¹¦¼ìË÷ÁËÊı¾İµÄÃ¿¸ö²éÑ¯(SELECT¡¢SHOW¡¢DESCRIBE¡¢EXPLAIN¡¢CHECK TABLEµÈ)
-     ·µ»ØÖµ:
-     . CR_COMMANDS_OUT_OF_SYNC ¡¡¡¡ÒÔ²»Ç¡µ±µÄË³ĞòÖ´ĞĞÁËÃüÁî¡£
- ¡¡¡¡¡¤ CR_OUT_OF_MEMORY ¡¡¡¡ÄÚ´æÒç³ö¡£
- ¡¡¡¡¡¤ CR_SERVER_GONE_ERROR ¡¡¡¡MySQL·şÎñÆ÷²»¿ÉÓÃ¡£
- ¡¡¡¡¡¤ CR_SERVER_LOST ¡¡¡¡ÔÚ²éÑ¯¹ı³ÌÖĞ£¬Óë·şÎñÆ÷µÄÁ¬½Ó¶ªÊ§¡£
- ¡¡¡¡¡¤ CR_UNKNOWN_ERROR ¡¡¡¡³öÏÖÎ´Öª´íÎó¡£*/
+     /*Â·mysql_store_result å¯¹äºæˆåŠŸæ£€ç´¢äº†æ•°æ®çš„æ¯ä¸ªæŸ¥è¯¢(SELECTã€SHOWã€DESCRIBEã€EXPLAINã€CHECK TABLEç­‰)
+     è¿”å›å€¼:
+     . CR_COMMANDS_OUT_OF_SYNC ã€€ã€€ä»¥ä¸æ°å½“çš„é¡ºåºæ‰§è¡Œäº†å‘½ä»¤ã€‚
+ ã€€ã€€Â· CR_OUT_OF_MEMORY ã€€ã€€å†…å­˜æº¢å‡ºã€‚
+ ã€€ã€€Â· CR_SERVER_GONE_ERROR ã€€ã€€MySQLæœåŠ¡å™¨ä¸å¯ç”¨ã€‚
+ ã€€ã€€Â· CR_SERVER_LOST ã€€ã€€åœ¨æŸ¥è¯¢è¿‡ç¨‹ä¸­ï¼Œä¸æœåŠ¡å™¨çš„è¿æ¥ä¸¢å¤±ã€‚
+ ã€€ã€€Â· CR_UNKNOWN_ERROR ã€€ã€€å‡ºç°æœªçŸ¥é”™è¯¯ã€‚*/
 	m_results = mysql_store_result(m_sock);
     if (NULL == m_results) {
-		cout << "²éÑ¯Êı¾İ¿âÊ§°Ü£¬²éÑ¯½á¹ûÎª¿Õ";
+		cout << "æŸ¥è¯¢æ•°æ®åº“å¤±è´¥ï¼ŒæŸ¥è¯¢ç»“æœä¸ºç©º";
 		return false;
 	}
-	//±éÀú±íÖĞµÄÏÂÒ»ĞĞ£¬È¡³öÄÚÈİ·ÅÈëm_record ½á¹û¼¯
+	//éå†è¡¨ä¸­çš„ä¸‹ä¸€è¡Œï¼Œå–å‡ºå†…å®¹æ”¾å…¥m_record ç»“æœé›†
 	while (m_record = mysql_fetch_row(m_results)) {
         
 		for(int i = 0; i < nColumn; i++) {
@@ -92,9 +93,9 @@ bool CMySql::SelectMySql(char* szSql, int nColumn, list<string>& lstStr)
 		return false;
 	}
     if(mysql_query(m_sock, szSql)) {
-		cout << "SQL Ö´ĞĞÊ§°Ü£¡" << endl;
-		cout << "´íÎóÔ­Òò: " << mysql_error(m_sock) << endl;
-		cout << "SQL Óï¾ä: " << szSql << endl;
+		cout << "SQL æ‰§è¡Œå¤±è´¥ï¼" << endl;
+		cout << "é”™è¯¯åŸå› : " << mysql_error(m_sock) << endl;
+		cout << "SQL è¯­å¥: " << szSql << endl;
 		return false;
 	}
     return true;
@@ -105,11 +106,11 @@ int CMySql::EscapeString(const char* src, int srcLen, char* dst, int dstLen)
     if (!m_sock || !src || !dst || srcLen < 0 || dstLen <= 0) {
         return -1;
     }
-    // mysql_real_escape_string ×î¶àĞ´Èë 2*srcLen+1 ×Ö½Ú£¨º¬ \0£©
+    // mysql_real_escape_string æœ€å¤šå†™å…¥ 2*srcLen+1 å­—èŠ‚ï¼ˆå« \0ï¼‰
     if (dstLen < 2 * srcLen + 1) {
         return -1;
     }
-    // mysql_real_escape_string ·µ»Ø×ªÒåºóµÄ×Ö½ÚÊı£¨²»º¬ \0£©£¬Ê§°Ü·µ»Ø (unsigned long)-1
+    // mysql_real_escape_string è¿”å›è½¬ä¹‰åçš„å­—èŠ‚æ•°ï¼ˆä¸å« \0ï¼‰ï¼Œå¤±è´¥è¿”å› (unsigned long)-1
     unsigned long ret = mysql_real_escape_string(m_sock, dst, src, (unsigned long)srcLen);
     if (ret == (unsigned long)-1) {
         return -1;

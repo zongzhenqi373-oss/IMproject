@@ -1,5 +1,6 @@
 #include "Kernel.h"
 #include"mediator/TCPServermediator.h"
+#include <vector>
 
 Kernel* Kernel::m_pKernel = nullptr;
 Kernel::Kernel()
@@ -70,7 +71,7 @@ void Kernel::closeServer()
 }
 
 //组装并发送一个完整包体：4B 小端协议号 + pb payload（net 层再加 4B 大端包长）
-void Kernel::sendPacket(protType type, const std::string& payload, unsigned long to)
+void Kernel::sendPacket(protType type, const std::string& payload, NetEndpoint to)
 {
 	std::string body;
 	body.resize(sizeof(protType) + payload.size());
@@ -80,7 +81,7 @@ void Kernel::sendPacket(protType type, const std::string& payload, unsigned long
 }
 
 //处理和分发所有收到的数据
-void Kernel::DealData(char* data, int len, unsigned long from)
+void Kernel::DealData(char* data, int len, NetEndpoint from)
 {
 	cout << __func__ << endl;
 	//包体 = [4B 小端协议号][pb payload]
@@ -119,7 +120,7 @@ void Kernel::DealData(char* data, int len, unsigned long from)
 }
 
 //处理注册请求的函数
-void Kernel::DealRegisterRq(char* data, int len, unsigned long from)
+void Kernel::DealRegisterRq(char* data, int len, NetEndpoint from)
 {
 	cout << __func__ << endl;
 	//1、解析 pb
@@ -196,7 +197,7 @@ void Kernel::DealRegisterRq(char* data, int len, unsigned long from)
 }
 
 //处理登录请求的函数
-void Kernel::DealLoginRq(char* data, int len, unsigned long from)
+void Kernel::DealLoginRq(char* data, int len, NetEndpoint from)
 {
 	cout << __func__ << endl;
 	im::proto::LoginRq rq;
@@ -276,7 +277,7 @@ void Kernel::getUserInfoAndFriendInfo(int id)
 	getInfoById(id, &Myinfo);
 
 	//把自己的信息发送给客户端（加锁查询 socket）
-	unsigned long selfSock = 0;
+	NetEndpoint selfSock = 0;
 	if (getSocket(id, selfSock))
 	{
 		sendPacket(DEF_PROT_FRIEND_INFO, Myinfo.SerializeAsString(), selfSock);
@@ -319,7 +320,7 @@ void Kernel::getUserInfoAndFriendInfo(int id)
 			cout << "ID:" << id << endl;
 		}
 		//查看朋友在不在线（加锁）
-		unsigned long friSock = 0;
+		NetEndpoint friSock = 0;
 		if (getSocket(friendid, friSock))
 		{
 			//如果在线，那么给好友发送自己的信息
@@ -410,7 +411,7 @@ void Kernel::sendOfflinemsg(int id) {
 			rq.set_msg(content);
 
 			// 发送给当前已登录用户（加锁查询 socket）
-			unsigned long selfSock = 0;
+			NetEndpoint selfSock = 0;
 			if (getSocket(id, selfSock))
 			{
 				sendPacket(DEF_PROT_CHAT_INFO_RQ, rq.SerializeAsString(), selfSock);
@@ -428,7 +429,7 @@ void Kernel::sendOfflinemsg(int id) {
 }
 
 //处理下线请求
-void Kernel::DealOfflineRq(char* data, int len, unsigned long from)
+void Kernel::DealOfflineRq(char* data, int len, NetEndpoint from)
 {
 	cout << __func__ << endl;
 	im::proto::FriendOffline offlineRq;
@@ -462,7 +463,7 @@ void Kernel::DealOfflineRq(char* data, int len, unsigned long from)
 		//4、从列表中删除已经取出的好友id
 		listRes.pop_front();
 		//5、判断好友是否在线（加锁查询 socket，锁外转发）
-		unsigned long friSock = 0;
+		NetEndpoint friSock = 0;
 		if (getSocket(friendid, friSock))
 		{
 			//6、如果在线，就给在线好友发送下线请求
@@ -471,7 +472,7 @@ void Kernel::DealOfflineRq(char* data, int len, unsigned long from)
 
 	}
 	//7、从map中删除下线用户并取出 socket（加锁），锁外 closesocket
-	unsigned long offSock = 0;
+	NetEndpoint offSock = 0;
 	if (eraseSocket(offlineRq.offlineid(), offSock))
 	{
 		if (offSock > 0)
@@ -482,7 +483,7 @@ void Kernel::DealOfflineRq(char* data, int len, unsigned long from)
 }
 
 //处理聊天请求
-void Kernel::DealChatRq(char* data, int len, unsigned long from)
+void Kernel::DealChatRq(char* data, int len, NetEndpoint from)
 {
 	cout << __func__ << endl;
 	im::proto::ChatInfoRq rq;
@@ -492,7 +493,7 @@ void Kernel::DealChatRq(char* data, int len, unsigned long from)
 		return;
 	}
 	//判断好友是否在线（加锁查询 socket，锁外转发）
-	unsigned long friSock = 0;
+	NetEndpoint friSock = 0;
 	if (getSocket(rq.friid(), friSock))
 	{
 		//如果在线，那么把聊天请求转发给好友（重组包体透传）
@@ -508,17 +509,18 @@ void Kernel::DealChatRq(char* data, int len, unsigned long from)
 		//如果不在线，那么回复一个不在线状态给客户端并将消息保存到消息列表数据库
 		//转义聊天内容，防止 SQL 注入（msg 来自客户端）
 		std::string msg = utf8Truncate(rq.msg(), CHAT_MSG_LEN - 1);
-		char escMsg[CHAT_MSG_LEN * 2 + 1] = "";
-		m_mysql.EscapeString(msg.c_str(), (int)msg.size(), escMsg, sizeof(escMsg));
+		std::vector<char> escMsg(CHAT_MSG_LEN * 2 + 1, '\0');
+		m_mysql.EscapeString(msg.c_str(), static_cast<int>(msg.size()),
+			escMsg.data(), static_cast<int>(escMsg.size()));
 
-		char sql[CHAT_MSG_LEN * 2 + 256] = "";
-		sprintf_s(sql,
+		std::vector<char> sql(CHAT_MSG_LEN * 2 + 256, '\0');
+		sprintf_s(sql.data(), sql.size(),
 			"insert into offline_msg (sender_id, receiver_id, content) values(%d, %d, '%s');",
 			rq.myid(),
 			rq.friid(),
-			escMsg);
+			escMsg.data());
 
-		m_mysql.UpdateMySql(sql);
+		m_mysql.UpdateMySql(sql.data());
 		cout << "离线消息已保存" << endl;
 
 		im::proto::ChatInfoRs rs;
@@ -530,7 +532,7 @@ void Kernel::DealChatRq(char* data, int len, unsigned long from)
 }
 
 //处理添加好友请求
-void Kernel::DealAddFriendRq(char* data, int len, unsigned long from)
+void Kernel::DealAddFriendRq(char* data, int len, NetEndpoint from)
 {
 	cout << __func__ << endl;
 	im::proto::AddFriendRq rq;
@@ -569,7 +571,7 @@ void Kernel::DealAddFriendRq(char* data, int len, unsigned long from)
 		int friendid = 0;
 		friendid = stoi(listRes.front());
 		listRes.pop_front();
-		unsigned long friSock = 0;
+		NetEndpoint friSock = 0;
 		if (getSocket(friendid, friSock))
 		{
 			//如果在线，将添加好友的请求转发给用户（重组包体透传）
@@ -593,7 +595,7 @@ void Kernel::DealAddFriendRq(char* data, int len, unsigned long from)
 }
 
 //处理添加好友回复
-void Kernel::DealAddFriendRs(char* data, int len, unsigned long from)
+void Kernel::DealAddFriendRs(char* data, int len, NetEndpoint from)
 {
 	cout << __func__ << endl;
 	im::proto::AddFriendRs rs;
@@ -627,7 +629,7 @@ void Kernel::DealAddFriendRs(char* data, int len, unsigned long from)
 
 	}
 	//无论结果如何，都把回复的数据传给发起好友申请的客户端（重组包体透传）
-	unsigned long destSock = 0;
+	NetEndpoint destSock = 0;
 	if (getSocket(rs.destid(), destSock))
 	{
 		std::string body;
@@ -644,7 +646,7 @@ void Kernel::DealAddFriendRs(char* data, int len, unsigned long from)
 //注意：所有 m_mapIdtoSocket 的读写必须通过这些方法，禁止直接访问。
 //锁内只做 map 查询/修改，锁外调用 sendData，避免持锁阻塞导致死锁/降并发。
 
-bool Kernel::getSocket(int id, unsigned long& out)
+bool Kernel::getSocket(int id, NetEndpoint& out)
 {
 	lock_guard<mutex> lock(m_mapIdtoSocketMutex);
 	auto it = m_mapIdtoSocket.find(id);
@@ -656,7 +658,7 @@ bool Kernel::getSocket(int id, unsigned long& out)
 	return false;
 }
 
-void Kernel::setSocket(int id, unsigned long sock)
+void Kernel::setSocket(int id, NetEndpoint sock)
 {
 	lock_guard<mutex> lock(m_mapIdtoSocketMutex);
 	m_mapIdtoSocket[id] = sock;
@@ -668,7 +670,7 @@ bool Kernel::isOnline(int id)
 	return m_mapIdtoSocket.count(id) > 0;
 }
 
-bool Kernel::eraseSocket(int id, unsigned long& outSock)
+bool Kernel::eraseSocket(int id, NetEndpoint& outSock)
 {
 	lock_guard<mutex> lock(m_mapIdtoSocketMutex);
 	auto it = m_mapIdtoSocket.find(id);

@@ -22,8 +22,9 @@ Kernal::Kernal(QObject *parent)
 
     // 连接服务端（原 TCPClient 硬编码 127.0.0.1，行为保持一致）
     if (!m_core.connectToServer("127.0.0.1")) {
-        QMessageBox::about(m_pLogin, "提示！", "打开网络失败！");
-        exit(-1);
+        QMessageBox::warning(m_pLogin, "连接失败",
+                             "无法连接到本机 IM 服务端（127.0.0.1:24563）。\n"
+                             "请先启动 IMServer，再重新启动客户端。");
     }
 
     // UI 信号 → core 业务方法

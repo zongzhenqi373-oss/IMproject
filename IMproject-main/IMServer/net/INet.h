@@ -3,6 +3,7 @@
 #include<process.h>
 #include<iostream>
 #include"def.h"
+#include"NetTypes.h"
 using namespace std;
 
 #pragma comment(lib,"Ws2_32.lib")
@@ -13,22 +14,22 @@ public:
 	INet():m_socket(INVALID_SOCKET),m_handle(nullptr),m_bRunning(true), m_mediator(nullptr){}
 	virtual ~INet() {}
 
-	//³õÊ¼»¯ÍøÂç
-	//·µ»ØÖµ£ºbool true´ú±í³É¹¦£¬false´ú±íÊ§°Ü
+	//åˆå§‹åŒ–ç½‘ç»œ
+	//è¿”å›å€¼ï¼šbool trueä»£è¡¨æˆåŠŸï¼Œfalseä»£è¡¨å¤±è´¥
 	virtual bool initNet() = 0;
 
-	//¹Ø±ÕÍøÂç
+	//å…³é—­ç½‘ç»œ
 	virtual void unInitNet() = 0;
 
-	//·¢ËÍÊı¾İ
-	//data:Òª·¢ËÍµÄÊı¾İ
-	//len:·¢ËÍµÄÊı¾İ³¤¶È
-	//to£ºÊı¾İ·¢¸øË­£¬ÔÚTCPĞ­ÒéÖĞ×°socket£¬ÔÚUDPĞ­ÒéÖĞ×°ip
-	virtual bool sendData(char* data,int len,u_long to) = 0;
-	//TCPĞ­ÒéÖĞ£¬socket¾ö¶¨ÁËÊı¾İ·¢¸øË­£¬socketÊÇUINTÀàĞÍ
-	//UDPĞ­ÒéÖĞ£¬ip¾ö¶¨ÁËÊı¾İ·¢¸øË­£¬ipÊÇu_longÀàĞÍ
+	//å‘é€æ•°æ®
+	//data:è¦å‘é€çš„æ•°æ®
+	//len:å‘é€çš„æ•°æ®é•¿åº¦
+	//toï¼šæ•°æ®å‘ç»™è°ï¼Œåœ¨TCPåè®®ä¸­è£…socketï¼Œåœ¨UDPåè®®ä¸­è£…ip
+	virtual bool sendData(char* data,int len,NetEndpoint to) = 0;
+	//TCPåè®®ä¸­ï¼Œsocketå†³å®šäº†æ•°æ®å‘ç»™è°ï¼Œsocketæ˜¯UINTç±»å‹
+	//UDPåè®®ä¸­ï¼Œipå†³å®šäº†æ•°æ®å‘ç»™è°ï¼Œipæ˜¯u_longç±»å‹
 	
-	//½ÓÊÕÊı¾İ
+	//æ¥æ”¶æ•°æ®
 	virtual void recvData() = 0;
 
 protected:

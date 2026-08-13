@@ -24,21 +24,21 @@ public:
     void onRegisterResult(int result) override { emit sig_registerResult(result); }
     void onLoginResult(int result, int userId) override { emit sig_loginResult(result, userId); }
     void onSelfInfo(const im::UserInfo& info) override {
-        emit sig_selfInfo(info.iconId, QString::fromUtf8(info.nick), QString::fromUtf8(info.feeling));
+        emit sig_selfInfo(info.iconId, fromUtf8(info.nick), fromUtf8(info.feeling));
     }
     void onFriendInfo(const im::FriendInfo& info) override {
         emit sig_friendInfo(info.id, info.iconId, info.status,
-                            QString::fromUtf8(info.nick), QString::fromUtf8(info.feeling));
+                            fromUtf8(info.nick), fromUtf8(info.feeling));
     }
     void onChatMessage(int fromId, const std::string& msg) override {
-        emit sig_chatMessage(fromId, QString::fromUtf8(msg));
+        emit sig_chatMessage(fromId, fromUtf8(msg));
     }
     void onChatSendResult(int friId, int result) override { emit sig_chatSendResult(friId, result); }
     void onAddFriendRequest(int fromId, const std::string& fromNick) override {
-        emit sig_addFriendRequest(fromId, QString::fromUtf8(fromNick));
+        emit sig_addFriendRequest(fromId, fromUtf8(fromNick));
     }
     void onAddFriendResult(int result, const std::string& destNick) override {
-        emit sig_addFriendResult(result, QString::fromUtf8(destNick));
+        emit sig_addFriendResult(result, fromUtf8(destNick));
     }
     void onFriendOffline(int userId) override { emit sig_friendOffline(userId); }
     void onConnectionClosed() override { emit sig_connectionClosed(); }
@@ -64,6 +64,11 @@ public slots:
     void slots_addFriend(QString nick);
     void slots_sendMyoffline();
     void slots_quitLogin();
+
+private:
+    static QString fromUtf8(const std::string& value) {
+        return QString::fromUtf8(value.data(), static_cast<int>(value.size()));
+    }
 
 private slots:
     // ---------------- core 事件的 UI 线程处理（原 deal_xxx 逻辑） ----------------

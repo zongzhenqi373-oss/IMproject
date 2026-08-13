@@ -7,24 +7,24 @@ public:
 	UDP(INetmediator* p);
 	~UDP();
 
-	//³õÊ¼»¯ÍøÂç
-	//·µ»ØÖµ£ºbool true´ú±í³É¹¦£¬false´ú±íÊ§°Ü
+	//åˆå§‹åŒ–ç½‘ç»œ
+	//è¿”å›å€¼ï¼šbool trueä»£è¡¨æˆåŠŸï¼Œfalseä»£è¡¨å¤±è´¥
 	bool initNet();
 
-	//¹Ø±ÕÍøÂç
+	//å…³é—­ç½‘ç»œ
 	void unInitNet();
 
-	//·¢ËÍÊı¾İ
-	//data:Òª·¢ËÍµÄÊı¾İ
-	//len:·¢ËÍµÄÊı¾İ³¤¶È
-	//to£ºÊı¾İ·¢¸øË­£¬ÔÚTCPĞ­ÒéÖĞ×°socket£¬ÔÚUDPĞ­ÒéÖĞ×°ip
-	bool sendData(char* data, int len, u_long to);
-	//TCPĞ­ÒéÖĞ£¬socket¾ö¶¨ÁËÊı¾İ·¢¸øË­£¬socketÊÇUINTÀàĞÍ
-	//UDPĞ­ÒéÖĞ£¬ip¾ö¶¨ÁËÊı¾İ·¢¸øË­£¬ipÊÇu_longÀàĞÍ
+	//å‘é€æ•°æ®
+	//data:è¦å‘é€çš„æ•°æ®
+	//len:å‘é€çš„æ•°æ®é•¿åº¦
+	//toï¼šæ•°æ®å‘ç»™è°ï¼Œåœ¨TCPåè®®ä¸­è£…socketï¼Œåœ¨UDPåè®®ä¸­è£…ip
+	bool sendData(char* data, int len, NetEndpoint to);
+	//TCPåè®®ä¸­ï¼Œsocketå†³å®šäº†æ•°æ®å‘ç»™è°ï¼Œsocketæ˜¯UINTç±»å‹
+	//UDPåè®®ä¸­ï¼Œipå†³å®šäº†æ•°æ®å‘ç»™è°ï¼Œipæ˜¯u_longç±»å‹
 
-	//½ÓÊÕÊı¾İ
+	//æ¥æ”¶æ•°æ®
 	void recvData();
 
-	//½ÓÊÕÊı¾İµÄÏß³Ìº¯Êı
+	//æ¥æ”¶æ•°æ®çš„çº¿ç¨‹å‡½æ•°
 	static unsigned __stdcall recvThread(void* lpVoid);
 };

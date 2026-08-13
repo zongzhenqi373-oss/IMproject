@@ -185,7 +185,7 @@ image: url(:/images/images/login.png);</string>
       </item>
      </layout>
     </widget>
-    <widget class="QWidget" name="layoutWidget">
+    <widget class="QWidget" name="layoutWidget_loginActions">
      <property name="geometry">
       <rect>
        <x>50</x>

@@ -176,6 +176,7 @@ void mainwdiget::setFriendOffline(int friid)
 
 void mainwdiget::closeEvent(QCloseEvent *event)
 {
+    Q_UNUSED(event);
     qDebug()<<"mainwdiget::closeEvent ";
 
     emit signals_sendMyoffline();

@@ -16,28 +16,28 @@ TCPServermediator::~TCPServermediator()
 	}
 }
 
-//´ò¿ªÍøÂç
-//·µ»ØÖµ£ºbool true´ú±í³É¹¦£¬false´ú±íÊ§°Ü
+//æ‰“å¼€ç½‘ç»œ
+//è¿”å›žå€¼ï¼šbool trueä»£è¡¨æˆåŠŸï¼Œfalseä»£è¡¨å¤±è´¥
 bool TCPServermediator::openNet()
 {
 	return m_pNet->initNet();
 }
 
-//¹Ø±ÕÍøÂç
+//å…³é—­ç½‘ç»œ
 void TCPServermediator::closeNet()
 {
 	m_pNet->unInitNet();
 }
 
-//·¢ËÍÊý¾Ý
-bool TCPServermediator::sendData(char* data, int len, unsigned long to)
+//å‘é€æ•°æ®
+bool TCPServermediator::sendData(char* data, int len, NetEndpoint to)
 {
 	return m_pNet->sendData(data, len, to);
 }
 
 
-//´«ÊäÊý¾Ý¸økernel
-void TCPServermediator::transmitData(char* data, int len, unsigned long from)
+//ä¼ è¾“æ•°æ®ç»™kernel
+void TCPServermediator::transmitData(char* data, int len, NetEndpoint from)
 {
 	Kernel::m_pKernel->DealData(data, len, from);
 }

@@ -17,29 +17,30 @@ UDPmediator::~UDPmediator()
 	}
 }
 
-//´ò¿ªÍøÂç
-//·µ»ØÖµ£ºbool true´ú±í³É¹¦£¬false´ú±íÊ§°Ü
+//æ‰“å¼€ç½‘ç»œ
+//è¿”å›å€¼ï¼šbool trueä»£è¡¨æˆåŠŸï¼Œfalseä»£è¡¨å¤±è´¥
 bool UDPmediator::openNet()
 {
 	return m_pNet->initNet();
 }
 
-//¹Ø±ÕÍøÂç
+//å…³é—­ç½‘ç»œ
 void UDPmediator::closeNet()
 {
 	m_pNet->unInitNet();
 }
 
-//·¢ËÍÊı¾İ
-bool UDPmediator::sendData(char* data, int len, unsigned long to)
+//å‘é€æ•°æ®
+bool UDPmediator::sendData(char* data, int len, NetEndpoint to)
 {
 	return m_pNet->sendData(data, len, to);
 }
 
 
-//´«ÊäÊı¾İ¸økernel
-void UDPmediator::transmitData(char* data, int len, unsigned long from)
+//ä¼ è¾“æ•°æ®ç»™kernel
+void UDPmediator::transmitData(char* data, int len, NetEndpoint from)
 {
-	//²âÊÔ´úÂë£¬´òÓ¡Ò»ÏÂĞÂ¿Õ¼äÊı¾İ
-	cout << "UDPmediator::transmitData:" << data << endl;
+	// Protocol payload is binary protobuf data, not a null-terminated string.
+	cout << "UDPmediator::transmitData length=" << len
+		 << ", from=" << from << endl;
 }

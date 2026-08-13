@@ -5,6 +5,12 @@ greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 # client_core 需要 C++17
 CONFIG += c++17
 
+msvc {
+    # 客户端源码与 protobuf 生成物统一按 UTF-8 解析。
+    QMAKE_CXXFLAGS += /utf-8
+    DEFINES += _HAS_STD_BYTE=0 _WIN32_WINNT=0x0601
+}
+
 # You can make your code fail to compile if it uses deprecated APIs.
 # In order to do so, uncomment the following line.
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
@@ -27,7 +33,30 @@ DEFINES += ASIO_STANDALONE ASIO_NO_DEPRECATED
 # 注意：protobuf >= 22 依赖 abseil，若链接报 absl 相关错误，需在 LIBS 中补充 absl 库。
 PROTOBUF_DIR = D:/vcpkg/installed/x64-windows
 INCLUDEPATH += $$PROTOBUF_DIR/include
-LIBS += -L$$PROTOBUF_DIR/lib -lprotobuf
+
+CONFIG(debug, debug|release) {
+    LIBS += -L$$PROTOBUF_DIR/debug/lib \
+        -llibprotobufd \
+        -labseil_dll \
+        -lutf8_validity
+    VCPKG_RUNTIME_DIR = $$PROTOBUF_DIR/debug/bin
+    VCPKG_PROTOBUF_DLL = libprotobufd.dll
+    VCPKG_RUNTIME_DEST = $$OUT_PWD/debug
+} else {
+    LIBS += -L$$PROTOBUF_DIR/lib \
+        -llibprotobuf \
+        -labseil_dll \
+        -lutf8_validity
+    VCPKG_RUNTIME_DIR = $$PROTOBUF_DIR/bin
+    VCPKG_PROTOBUF_DLL = libprotobuf.dll
+    VCPKG_RUNTIME_DEST = $$OUT_PWD/release
+}
+
+win32 {
+    # Qt Creator 的运行环境未必包含 vcpkg/bin，构建后把直接依赖部署到 exe 旁边。
+    QMAKE_POST_LINK += $$QMAKE_COPY /Y $$shell_path($$VCPKG_RUNTIME_DIR/$$VCPKG_PROTOBUF_DLL) $$shell_path($$VCPKG_RUNTIME_DEST) $$escape_expand(\n\t)
+    QMAKE_POST_LINK += $$QMAKE_COPY /Y $$shell_path($$VCPKG_RUNTIME_DIR/abseil_dll.dll) $$shell_path($$VCPKG_RUNTIME_DEST) $$escape_expand(\n\t)
+}
 
 SOURCES += \
     Frienditem.cpp \
@@ -39,6 +68,12 @@ SOURCES += \
     ../client_core/src/ClientCore.cpp \
     ../client_core/src/TcpTransport.cpp \
     ../protocol/generated/im.pb.cc
+
+msvc {
+    # Qt 5.12 的 qmake 无法对单个 SOURCES 项方便地设置 MSVC 告警选项。
+    # 关闭来自 protobuf/abseil 公共头文件的已知告警，项目仍保留其余告警检查。
+    QMAKE_CXXFLAGS_WARN_ON += /wd4018 /wd4100 /wd4244 /wd4251 /wd4267
+}
 
 HEADERS += \
     Frienditem.h \

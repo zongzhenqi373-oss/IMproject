@@ -7,17 +7,17 @@ public:
 	TCPClientmediator();
 	~TCPClientmediator();
 
-	//´ò¿ªÍøÂç
-	//·µ»ØÖµ£ºbool true´ú±í³É¹¦£¬false´ú±íÊ§°Ü
+	//æ‰“å¼€ç½‘ç»œ
+	//è¿”å›å€¼ï¼šbool trueä»£è¡¨æˆåŠŸï¼Œfalseä»£è¡¨å¤±è´¥
 	bool openNet();
 
-	//¹Ø±ÕÍøÂç
+	//å…³é—­ç½‘ç»œ
 	void closeNet();
 
-	//·¢ËÍÊı¾İ
-	bool sendData(char* data, int len, unsigned long to);
+	//å‘é€æ•°æ®
+	bool sendData(char* data, int len, NetEndpoint to);
 
-	//´«ÊäÊı¾İ¸økernel
-	void transmitData(char* data, int len, unsigned long from);
+	//ä¼ è¾“æ•°æ®ç»™kernel
+	void transmitData(char* data, int len, NetEndpoint from);
 
 };
