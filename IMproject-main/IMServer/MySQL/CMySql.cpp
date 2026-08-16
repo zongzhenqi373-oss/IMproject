@@ -26,11 +26,13 @@ CMySql::~CMySql(void)
 
 void CMySql::DisConnect()
 {
+	lock_guard<mutex> lock(m_mutex);
     mysql_close(m_sock);
 }
 
 bool CMySql::ConnectMySql(char *host, char *user, char *pass, char *db, short nport)
 {
+	lock_guard<mutex> lock(m_mutex);
 	if (!mysql_real_connect(m_sock, host, user, pass, db, nport, NULL, CLIENT_MULTI_STATEMENTS)) {
 		cout << "连接数据库失败，失败错原因：" << mysql_error(m_sock);
         //连接错误
@@ -40,6 +42,7 @@ bool CMySql::ConnectMySql(char *host, char *user, char *pass, char *db, short np
 }
  bool  CMySql::GetTables(char* szSql, list<string>& lstStr)
  {
+	lock_guard<mutex> lock(m_mutex);
     if(mysql_query(m_sock, szSql)) {
 		return false;
 	}
@@ -55,6 +58,7 @@ bool CMySql::ConnectMySql(char *host, char *user, char *pass, char *db, short np
  }
 bool CMySql::SelectMySql(char* szSql, int nColumn, list<string>& lstStr)
 {
+	lock_guard<mutex> lock(m_mutex);
     //mysql_query() 函数用于向 MySQL 发送并执行 SQL 语句
 	if(mysql_query(m_sock, szSql)) {
 		cout << "查询数据库失败，失败错原因：" << mysql_error(m_sock);
@@ -89,6 +93,7 @@ bool CMySql::SelectMySql(char* szSql, int nColumn, list<string>& lstStr)
 
  bool  CMySql::UpdateMySql(char* szSql)
  {
+	lock_guard<mutex> lock(m_mutex);
     if(!szSql) {
 		return false;
 	}
@@ -103,6 +108,7 @@ bool CMySql::SelectMySql(char* szSql, int nColumn, list<string>& lstStr)
 
 int CMySql::EscapeString(const char* src, int srcLen, char* dst, int dstLen)
 {
+	lock_guard<mutex> lock(m_mutex);
     if (!m_sock || !src || !dst || srcLen < 0 || dstLen <= 0) {
         return -1;
     }

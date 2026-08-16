@@ -39,6 +39,9 @@ constexpr protType DEF_PROT_CHAT_INFO_RS   = DEF_BASE + 6; // 聊天回复
 constexpr protType DEF_PROT_ADD_FRIEND_RQ  = DEF_BASE + 7; // 添加好友请求
 constexpr protType DEF_PROT_ADD_FRIEND_RS  = DEF_BASE + 8; // 添加好友回复
 constexpr protType DEF_PROT_FRIEND_OFFLINE = DEF_BASE + 9; // 下线通知
+constexpr protType DEF_PROT_HEARTBEAT_RQ   = DEF_BASE + 10; // 心跳请求（C→S，空 payload）
+constexpr protType DEF_PROT_HEARTBEAT_RS   = DEF_BASE + 11; // 心跳回复（S→C，空 payload）
+constexpr protType DEF_PROT_KICKED_OFFLINE = DEF_BASE + 12; // 被踢下线通知（S→C，空 payload）
 
 // ---------------- 字段软上限（字节，UTF-8） ----------------
 // 与原定长 struct 语义一致；pb 字符串不再定长，由应用层截断保护

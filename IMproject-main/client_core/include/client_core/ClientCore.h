@@ -6,11 +6,13 @@
 // 线程模型：内部持有 asio 网络线程，IClientEvents 回调均在该线程触发；
 //           UI 层（Qt/Electron/移动端）需自行 marshal 到 UI 线程。
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
 #include <string>
+#include <thread>
 #include "Protocol.h"
 #include "Types.h"
 
@@ -51,6 +53,10 @@ public:
     // 好友下线
     virtual void onFriendOffline(int userId) = 0;
 
+    // 账号在别处登录被踢下线（对齐 QQNT session listener）
+    // reason 保留扩展（当前恒为 0，表示"重复登录"）
+    virtual void onKickedOffline(int reason) = 0;
+
     // 与服务端连接断开（对端关闭/网络异常/本地 close）
     virtual void onConnectionClosed() = 0;
 };
@@ -74,6 +80,12 @@ public:
     bool connectToServer(const std::string& ip, std::uint16_t port = proto::TCP_PORT);
     void disconnect();
     bool isConnected() const;
+
+    // ---------------- 心跳保活 ----------------
+    // 心跳间隔（毫秒，默认 30000）。连接成功后每间隔发一次 HEARTBEAT_RQ；
+    // 连续 3 个间隔未收到服务端的任何数据则判定断连（触发 onConnectionClosed）。
+    // 需在 connectToServer 之前调用才生效。
+    void setHeartbeatIntervalMs(int intervalMs);
 
     // ---------------- 业务请求 ----------------
     void sendRegister(const std::string& nickUtf8, const std::string& tel, const std::string& pass);
@@ -107,12 +119,27 @@ private:
     void onAddFriRq(const char* data, std::size_t len);
     void onAddFriRs(const char* data, std::size_t len);
     void onFriendOfflinePkt(const char* data, std::size_t len);
+    // 被踢下线通知
+    void onKickedOfflinePkt(const char* data, std::size_t len);
+    // 心跳回复：无需处理（任何入站包都会刷新活跃时间），注册避免"未注册类型"日志
+    void onHeartbeatRs(const char* data, std::size_t len);
+
+    // ---------------- 心跳保活 ----------------
+    void startHeartbeat();
+    void stopHeartbeat();
+
+    std::thread m_hbThread;
+    std::atomic<bool> m_hbRunning{false};
+    int m_hbIntervalMs = 30000;
+    // 最近一次收到服务端任意数据的时刻（steady_clock 毫秒），0 表示尚无
+    std::atomic<std::int64_t> m_lastRecvMs{0};
 
     // 发送一个完整协议包：4B 小端协议号 + pb payload（transport 再加包长前缀）
     void sendPacket(proto::protType type, const std::string& payload);
 
-    IClientEvents* m_events = nullptr;
-    IStorage* m_storage = nullptr;
+    //跨线程指针：UI 线程设置（setEventSink/setStorage），asio io 线程与心跳线程读取
+    std::atomic<IClientEvents*> m_events{nullptr};
+    std::atomic<IStorage*> m_storage{nullptr};
     std::unique_ptr<TcpTransport> m_transport;
 
     // 会话状态（登录成功后填充）

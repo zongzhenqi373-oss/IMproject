@@ -43,6 +43,11 @@ public:
         if (m_thread.joinable()) m_thread.join();
     }
 
+    // 收到的心跳请求数（测试轮询验证用）
+    std::atomic<int> heartbeatCount{0};
+    // false 时不应答心跳（模拟半开连接，验证客户端超时判定）
+    bool echoHeartbeat = true;
+
 private:
     void run()
     {
@@ -116,6 +121,11 @@ private:
             rs.set_result(CHAT_RESULT_SUCC);
             return sendPkt(sock, DEF_PROT_CHAT_INFO_RS, rs.SerializeAsString());
         }
+        case DEF_PROT_HEARTBEAT_RQ: {
+            ++heartbeatCount;
+            if (!echoHeartbeat) return true; // 不应答，保持连接读循环
+            return sendPkt(sock, DEF_PROT_HEARTBEAT_RS, "");
+        }
         case DEF_PROT_FRIEND_OFFLINE:
             // 模拟服务端收到下线通知后关闭连接
             return false;
@@ -182,6 +192,7 @@ struct RecordingEvents : IClientEvents {
     void onAddFriendRequest(int, const std::string&) override {}
     void onAddFriendResult(int, const std::string&) override {}
     void onFriendOffline(int) override {}
+    void onKickedOffline(int) override {}
     void onConnectionClosed() override { std::lock_guard<std::mutex> l(mtx); closed = true; notify(); }
 
     template <typename Pred>
@@ -196,41 +207,71 @@ struct RecordingEvents : IClientEvents {
 
 int main()
 {
-    FakeServer server;
-    std::uint16_t port = 0;
-    assert(server.start(port));
+    // ==================== 场景 A：正常登录/聊天/心跳保活/下线 ====================
+    {
+        FakeServer server;
+        std::uint16_t port = 0;
+        assert(server.start(port));
 
-    RecordingEvents ev;
-    ClientCore core;
-    core.setEventSink(&ev);
-    assert(core.connectToServer("127.0.0.1", port));
+        RecordingEvents ev;
+        ClientCore core;
+        core.setEventSink(&ev);
+        core.setHeartbeatIntervalMs(200); // 测试加速：200ms 心跳
+        assert(core.connectToServer("127.0.0.1", port));
 
-    // 登录 → 应依次收到：登录回复 / 自资料 / 好友资料 / 离线消息
-    core.sendLogin("13800000000", "123456");
-    assert(ev.waitFor([&] { return ev.loginResult == LOGIN_SUCCESS; }));
-    assert(ev.loginUserId == 42);
-    assert(ev.waitFor([&] { return ev.gotSelf; }));
-    assert(ev.self.nick == "测试用户");
-    assert(ev.waitFor([&] { return !ev.friends.empty(); }));
-    assert(ev.friends[0].id == 7 && ev.friends[0].nick == "张三");
-    assert(ev.waitFor([&] { return !ev.chats.empty(); }));
-    assert(ev.chats[0].first == 7 && ev.chats[0].second == "这是离线消息");
+        // 登录 → 应依次收到：登录回复 / 自资料 / 好友资料 / 离线消息
+        core.sendLogin("13800000000", "123456");
+        assert(ev.waitFor([&] { return ev.loginResult == LOGIN_SUCCESS; }));
+        assert(ev.loginUserId == 42);
+        assert(ev.waitFor([&] { return ev.gotSelf; }));
+        assert(ev.self.nick == "测试用户");
+        assert(ev.waitFor([&] { return !ev.friends.empty(); }));
+        assert(ev.friends[0].id == 7 && ev.friends[0].nick == "张三");
+        assert(ev.waitFor([&] { return !ev.chats.empty(); }));
+        assert(ev.chats[0].first == 7 && ev.chats[0].second == "这是离线消息");
 
-    // 会话状态应已填充
-    assert(core.myId() == 42);
-    assert(core.myNick() == "测试用户");
+        // 会话状态应已填充
+        assert(core.myId() == 42);
+        assert(core.myNick() == "测试用户");
 
-    // 发聊天 → 服务端回送达结果
-    core.sendChatMessage(7, "你好张三");
-    assert(ev.waitFor([&] { return !ev.chatResults.empty(); }));
-    assert(ev.chatResults[0].first == 7 && ev.chatResults[0].second == CHAT_RESULT_SUCC);
+        // 发聊天 → 服务端回送达结果
+        core.sendChatMessage(7, "你好张三");
+        assert(ev.waitFor([&] { return !ev.chatResults.empty(); }));
+        assert(ev.chatResults[0].first == 7 && ev.chatResults[0].second == CHAT_RESULT_SUCC);
 
-    // 下线通知 → 假服务端关连接 → 客户端应收到断连回调
-    core.sendOfflineNotify();
-    assert(ev.waitFor([&] { return ev.closed; }));
+        // 心跳保活：等待服务端收到至少 2 个心跳（≈400ms+），期间连接应保持
+        assert(ev.waitFor([&] { return server.heartbeatCount.load() >= 2; }));
+        assert(core.isConnected());
+        assert(!ev.closed);
 
-    core.disconnect();
-    server.stop();
+        // 下线通知 → 假服务端关连接 → 客户端应收到断连回调
+        core.sendOfflineNotify();
+        assert(ev.waitFor([&] { return ev.closed; }));
+
+        core.disconnect();
+        server.stop();
+    }
+
+    // ==================== 场景 B：服务端不应答心跳 → 客户端超时判定断连 ====================
+    {
+        FakeServer server;
+        server.echoHeartbeat = false; // 模拟半开连接：能发但收不到任何回包
+        std::uint16_t port = 0;
+        assert(server.start(port));
+
+        RecordingEvents ev;
+        ClientCore core;
+        core.setEventSink(&ev);
+        core.setHeartbeatIntervalMs(200); // 超时阈值 = 3 × 200ms = 600ms
+        assert(core.connectToServer("127.0.0.1", port));
+
+        // 约 600~800ms 后客户端应判定断连并回调 onConnectionClosed
+        assert(ev.waitFor([&] { return ev.closed; }, 3000));
+        assert(!core.isConnected());
+
+        core.disconnect();
+        server.stop();
+    }
 
     std::cout << "test_integration PASSED" << std::endl;
     return 0;

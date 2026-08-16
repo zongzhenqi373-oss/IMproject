@@ -2,6 +2,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include<iostream>
 #include<Windows.h>
+#include<conio.h>
 #include"net/UDP.h"
 #include"net/TCPClient.h"
 #include"net/TCPServer.h"
@@ -12,6 +13,27 @@
 
 using namespace std;
 
+//优雅关停：控制台终止信号 → 置事件，主线程收到后走 closeServer 正常流程
+static HANDLE g_hQuitEvent = nullptr;
+
+static BOOL WINAPI ConsoleCtrlHandler(DWORD ctrlType)
+{
+	switch (ctrlType)
+	{
+	case CTRL_C_EVENT:
+	case CTRL_BREAK_EVENT:
+		//已处理，阻止进程被立即终止；主线程负责关停
+		if (g_hQuitEvent) SetEvent(g_hQuitEvent);
+		return TRUE;
+	case CTRL_CLOSE_EVENT:
+		//关窗后系统只给进程约 5 秒：置事件后等待主线程完成关停
+		if (g_hQuitEvent) SetEvent(g_hQuitEvent);
+		Sleep(3000);
+		return TRUE;
+	default:
+		return FALSE;
+	}
+}
 
 int main()
 {
@@ -20,50 +42,32 @@ int main()
 	SetConsoleOutputCP(CP_UTF8);
 	SetConsoleCP(CP_UTF8);
 
-	//char s[] = "Hello World!";
-
-	//TCPServermediator* p_TcpS = new TCPServermediator;
-	//if (!p_TcpS->openNet())
-	//{
-	//	cout << "打开TCP服务端网络失败！" << endl;
-	//	return 1;
-	//}
-
-	//TCPClientmediator* p_TcpC = new TCPClientmediator;
-	//if (!p_TcpC->openNet())
-	//{
-	//	cout << "打开TCP客户端网络失败！" << endl;
-	//	return 1;
-	//}
-	////客户端给服务端发个数据
-	//p_TcpC->sendData(s, sizeof(s), 23);
-
-
-	//UDPmediator* p_udp = new UDPmediator;
-	//if (!p_udp->openNet())
-	//{
-	//	cout << "打开UDP网络失败！" << endl;
-	//	return 1;
-	//}
-	////给自己发一个消息
-	//p_udp->transmitData(s, sizeof(s), inet_addr("127.0.0.1"));
-
-	Kernel Kernel;
-	if (!Kernel.startServer())
+	Kernel kernel;
+	if (!kernel.startServer())
 	{
 		cout << "打开服务器失败！" << endl;
 		return 1;
 	}
 
-	while (true)
+	//优雅关停：q 键 / Ctrl+C / Ctrl+Break / 关闭窗口
+	g_hQuitEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+	SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
+
+	cout << "Server is running! 按 q 或 Ctrl+C 优雅关停服务器..." << endl;
+	while (WaitForSingleObject(g_hQuitEvent, 500) == WAIT_TIMEOUT)
 	{
-		cout << "Server is running!" << endl;
-		Sleep(5000);
+		if (_kbhit())
+		{
+			const int ch = _getch();
+			if (ch == 'q' || ch == 'Q') break;
+		}
 	}
 
-	/*delete p_udp;
-	delete p_TcpC;
-	delete p_TcpS;*/
+	cout << "正在关停服务器..." << endl;
+	kernel.closeServer();   //停心跳扫描线程 → 关网络（join 全部工作线程）→ 断开数据库
+	CloseHandle(g_hQuitEvent);
+	g_hQuitEvent = nullptr;
+	cout << "服务器已关停。" << endl;
 	return 0;
 }
 

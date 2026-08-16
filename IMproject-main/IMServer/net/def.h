@@ -45,6 +45,17 @@
 #define DEF_PROT_ADD_FRIEND_RS  (DEF_BASE+8)
 //下线请求协议类型
 #define DEF_PROT_FRIEND_OFFLINE (DEF_BASE+9)
+//心跳请求协议类型（客户端→服务端，空 payload）
+#define DEF_PROT_HEARTBEAT_RQ  (DEF_BASE+10)
+//心跳回复协议类型（服务端→客户端，空 payload）
+#define DEF_PROT_HEARTBEAT_RS  (DEF_BASE+11)
+//被踢下线通知（服务端→客户端，空 payload：同账号在别处登录）
+#define DEF_PROT_KICKED_OFFLINE (DEF_BASE+12)
+
+//心跳超时扫描间隔（秒）
+#define HEARTBEAT_SCAN_INTERVAL_SEC (10)
+//心跳超时时间（秒）：超过该时间未收到某连接的任何数据则强制下线
+#define HEARTBEAT_TIMEOUT_SEC (90)
 
 //字段软上限（字节，UTF-8）—— pb 字符串不再定长，由应用层截断保护
 //用户昵称长度

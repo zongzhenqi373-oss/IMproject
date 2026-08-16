@@ -23,7 +23,8 @@ LIBS += -lWs2_32
 INCLUDEPATH += \
     ../client_core/include \
     ../client_core/third_party/asio/include \
-    ../protocol/generated
+    ../protocol/generated \
+    ../protocol
 
 DEFINES += ASIO_STANDALONE ASIO_NO_DEPRECATED
 

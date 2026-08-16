@@ -21,4 +21,10 @@ public:
 	//传输数据给kernel
 	void transmitData(char* data, int len, NetEndpoint from);
 
+	//业务层请求关闭指定连接（转发给 net 层执行）
+	void closeConnection(NetEndpoint sock) override;
+
+	//net 层上报连接断开（转发给 kernel）
+	void notifyDisconnect(NetEndpoint sock) override;
+
 };

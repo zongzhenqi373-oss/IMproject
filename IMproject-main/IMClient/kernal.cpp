@@ -18,6 +18,7 @@ Kernal::Kernal(QObject *parent)
     connect(this, &Kernal::sig_addFriendRequest, this, &Kernal::onAddFriendRequestUi, Qt::QueuedConnection);
     connect(this, &Kernal::sig_addFriendResult,  this, &Kernal::onAddFriendResultUi,  Qt::QueuedConnection);
     connect(this, &Kernal::sig_friendOffline,    this, &Kernal::onFriendOfflineUi,    Qt::QueuedConnection);
+    connect(this, &Kernal::sig_kickedOffline,    this, &Kernal::onKickedOfflineUi,    Qt::QueuedConnection);
     connect(this, &Kernal::sig_connectionClosed, this, &Kernal::onConnectionClosedUi, Qt::QueuedConnection);
 
     // 连接服务端（原 TCPClient 硬编码 127.0.0.1，行为保持一致）
@@ -165,6 +166,14 @@ void Kernal::onAddFriendResultUi(int result, QString destNick)
 void Kernal::onFriendOfflineUi(int userId)
 {
     m_Mainwdiget->setFriendOffline(userId);
+}
+
+void Kernal::onKickedOfflineUi(int reason)
+{
+    Q_UNUSED(reason);
+    QMessageBox::warning(m_Mainwdiget, "下线提示", "您的账号已在其他设备登录，本机已下线。");
+    m_core.disconnect();
+    destroyUi();
 }
 
 void Kernal::onConnectionClosedUi()

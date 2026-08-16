@@ -2,7 +2,9 @@
 #include "client_core/IStorage.h"
 #include "TcpTransport.h"
 #include "im.pb.h"
+#include "sha256.h"
 
+#include <chrono>
 #include <ctime>
 
 namespace im {
@@ -16,6 +18,12 @@ bool parsePayload(const char* data, std::size_t len, T& out)
 {
     return out.ParseFromArray(data, static_cast<int>(len));
 }
+
+std::int64_t steadyNowMs()
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 } // namespace
 
 ClientCore::ClientCore()
@@ -24,27 +32,37 @@ ClientCore::ClientCore()
     initFunArr();
 
     m_transport->setPacketHandler([this](const char* data, std::size_t len) {
+        // 任何入站包都刷新活跃时间（含心跳回复）
+        m_lastRecvMs.store(steadyNowMs());
         dispatchPacket(data, len);
     });
     m_transport->setCloseHandler([this]() {
-        if (m_events) m_events->onConnectionClosed();
+        if (auto* ev = m_events.load()) ev->onConnectionClosed();
     });
 }
 
-ClientCore::~ClientCore() = default;
+ClientCore::~ClientCore()
+{
+    // 先停心跳线程（避免其在析构中调用 transport），再断连
+    stopHeartbeat();
+}
 
-void ClientCore::setEventSink(IClientEvents* events) { m_events = events; }
-void ClientCore::setStorage(IStorage* storage) { m_storage = storage; }
+void ClientCore::setEventSink(IClientEvents* events) { m_events.store(events); }
+void ClientCore::setStorage(IStorage* storage) { m_storage.store(storage); }
 
 // ---------------- 连接管理 ----------------
 
 bool ClientCore::connectToServer(const std::string& ip, std::uint16_t port)
 {
-    return m_transport->connect(ip, port);
+    if (!m_transport->connect(ip, port)) return false;
+    m_lastRecvMs.store(steadyNowMs());
+    startHeartbeat();
+    return true;
 }
 
 void ClientCore::disconnect()
 {
+    stopHeartbeat();
     m_transport->close();
 }
 
@@ -65,6 +83,8 @@ void ClientCore::initFunArr()
     m_dealFunArr[DEF_PROT_ADD_FRIEND_RS  - DEF_BASE] = &ClientCore::onAddFriRs;
     m_dealFunArr[DEF_PROT_ADD_FRIEND_RQ  - DEF_BASE] = &ClientCore::onAddFriRq;
     m_dealFunArr[DEF_PROT_FRIEND_OFFLINE - DEF_BASE] = &ClientCore::onFriendOfflinePkt;
+    m_dealFunArr[DEF_PROT_HEARTBEAT_RS   - DEF_BASE] = &ClientCore::onHeartbeatRs;
+    m_dealFunArr[DEF_PROT_KICKED_OFFLINE - DEF_BASE] = &ClientCore::onKickedOfflinePkt;
 }
 
 void ClientCore::dispatchPacket(const char* data, std::size_t len)
@@ -99,7 +119,8 @@ void ClientCore::sendRegister(const std::string& nickUtf8, const std::string& te
     im::proto::RegisterRq rq;
     rq.set_nick(utf8Truncate(nickUtf8, USER_NICK_LEN - 1));
     rq.set_tel(utf8Truncate(tel, USER_TEL_LEN - 1));
-    rq.set_pass(utf8Truncate(pass, USER_PASS_LEN - 1));
+    // 对齐 QQNT：密码绝不原文上链路，客户端先 SHA-256 一次（固定 64 字符 hex）
+    rq.set_pass(sha256Hex(pass));
     sendPacket(DEF_PROT_REGISTER_RQ, rq.SerializeAsString());
 }
 
@@ -107,7 +128,8 @@ void ClientCore::sendLogin(const std::string& tel, const std::string& pass)
 {
     im::proto::LoginRq rq;
     rq.set_tel(utf8Truncate(tel, USER_TEL_LEN - 1));
-    rq.set_pass(utf8Truncate(pass, USER_PASS_LEN - 1));
+    // 对齐 QQNT：传输的是密码哈希，而非明文
+    rq.set_pass(sha256Hex(pass));
     sendPacket(DEF_PROT_LOGIN_RQ, rq.SerializeAsString());
 }
 
@@ -122,9 +144,11 @@ void ClientCore::sendChatMessage(int friId, const std::string& msgUtf8)
     sendPacket(DEF_PROT_CHAT_INFO_RQ, rq.SerializeAsString());
 
     // 本地持久化：发出的消息
-    if (m_storage && m_myId > 0) {
-        m_storage->saveChatMessage(m_myId, friId, true, msg,
-                                   static_cast<std::int64_t>(std::time(nullptr)));
+    if (m_myId > 0) {
+        if (auto* st = m_storage.load()) {
+            st->saveChatMessage(m_myId, friId, true, msg,
+                                static_cast<std::int64_t>(std::time(nullptr)));
+        }
     }
 }
 
@@ -155,6 +179,55 @@ void ClientCore::sendOfflineNotify()
     sendPacket(DEF_PROT_FRIEND_OFFLINE, pkt.SerializeAsString());
 }
 
+// ---------------- 心跳保活 ----------------
+
+void ClientCore::setHeartbeatIntervalMs(int intervalMs)
+{
+    if (intervalMs > 0) m_hbIntervalMs = intervalMs;
+}
+
+void ClientCore::startHeartbeat()
+{
+    if (m_hbRunning.exchange(true)) return; // 已在运行
+    m_hbThread = std::thread([this]() {
+        while (m_hbRunning.load()) {
+            // 分段睡眠，便于 stopHeartbeat 快速响应
+            int waited = 0;
+            while (waited < m_hbIntervalMs && m_hbRunning.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                waited += 50;
+            }
+            if (!m_hbRunning.load()) break;
+            if (!m_transport->isOpen()) continue;
+
+            // 超时判定：连续 3 个间隔无任何入站数据 → 判定断连
+            const std::int64_t last = m_lastRecvMs.load();
+            if (last > 0 && steadyNowMs() - last > 3LL * m_hbIntervalMs) {
+                m_transport->close(); // 触发 onConnectionClosed
+                continue;
+            }
+            sendPacket(DEF_PROT_HEARTBEAT_RQ, "");
+        }
+    });
+}
+
+void ClientCore::stopHeartbeat()
+{
+    if (!m_hbRunning.exchange(false)) return;
+    if (m_hbThread.joinable()) m_hbThread.join();
+}
+
+void ClientCore::onHeartbeatRs(const char*, std::size_t)
+{
+    // 无需处理：入站包已在 transport 回调中刷新活跃时间
+}
+
+void ClientCore::onKickedOfflinePkt(const char*, std::size_t)
+{
+    // 被踢下线（同账号在别处登录）：通知 UI，由 UI 决定提示与收尾
+    if (auto* ev = m_events.load()) ev->onKickedOffline(0);
+}
+
 // ---------------- 会话状态 ----------------
 
 int ClientCore::myId() const { return m_myId; }
@@ -163,12 +236,14 @@ std::string ClientCore::myFeeling() const { return m_feeling; }
 int ClientCore::myIconId() const { return m_iconId; }
 
 // ---------------- 协议处理 ----------------
+// 注意：m_events/m_storage 为原子指针，先 load 到局部变量再调用，
+// 避免"判空"与"解引用"两次独立 load 之间的 TOCTOU。
 
 void ClientCore::onRegisterRs(const char* data, std::size_t len)
 {
     im::proto::RegisterRs rs;
     if (!parsePayload(data, len, rs)) return;
-    if (m_events) m_events->onRegisterResult(rs.result());
+    if (auto* ev = m_events.load()) ev->onRegisterResult(rs.result());
 }
 
 void ClientCore::onLoginRs(const char* data, std::size_t len)
@@ -176,7 +251,7 @@ void ClientCore::onLoginRs(const char* data, std::size_t len)
     im::proto::LoginRs rs;
     if (!parsePayload(data, len, rs)) return;
     if (rs.result() == LOGIN_SUCCESS) m_myId = rs.userid();
-    if (m_events) m_events->onLoginResult(rs.result(), rs.userid());
+    if (auto* ev = m_events.load()) ev->onLoginResult(rs.result(), rs.userid());
 }
 
 void ClientCore::onFriendInfoPkt(const char* data, std::size_t len)
@@ -195,8 +270,8 @@ void ClientCore::onFriendInfoPkt(const char* data, std::size_t len)
         self.iconId = m_iconId;
         self.nick = m_nick;
         self.feeling = m_feeling;
-        if (m_storage) m_storage->saveSelfInfo(self);
-        if (m_events) m_events->onSelfInfo(self);
+        if (auto* st = m_storage.load()) st->saveSelfInfo(self);
+        if (auto* ev = m_events.load()) ev->onSelfInfo(self);
     } else {
         im::FriendInfo fri; // 显式限定，避免与 pb 消息 im::proto::FriendInfo 冲突
         fri.id = info.userid();
@@ -204,8 +279,8 @@ void ClientCore::onFriendInfoPkt(const char* data, std::size_t len)
         fri.status = info.status();
         fri.nick = info.nick();
         fri.feeling = info.feeling();
-        if (m_storage) m_storage->saveFriend(fri);
-        if (m_events) m_events->onFriendInfo(fri);
+        if (auto* st = m_storage.load()) st->saveFriend(fri);
+        if (auto* ev = m_events.load()) ev->onFriendInfo(fri);
     }
 }
 
@@ -215,11 +290,13 @@ void ClientCore::onChatInfoRq(const char* data, std::size_t len)
     if (!parsePayload(data, len, rq)) return;
 
     // 本地持久化：收到的消息（rq.myid 是发送方）
-    if (m_storage && m_myId > 0) {
-        m_storage->saveChatMessage(m_myId, rq.myid(), false, rq.msg(),
-                                   static_cast<std::int64_t>(std::time(nullptr)));
+    if (m_myId > 0) {
+        if (auto* st = m_storage.load()) {
+            st->saveChatMessage(m_myId, rq.myid(), false, rq.msg(),
+                                static_cast<std::int64_t>(std::time(nullptr)));
+        }
     }
-    if (m_events) m_events->onChatMessage(rq.myid(), rq.msg());
+    if (auto* ev = m_events.load()) ev->onChatMessage(rq.myid(), rq.msg());
 }
 
 void ClientCore::onChatInfoRs(const char* data, std::size_t len)
@@ -227,28 +304,28 @@ void ClientCore::onChatInfoRs(const char* data, std::size_t len)
     im::proto::ChatInfoRs rs;
     if (!parsePayload(data, len, rs)) return;
     // 回复中 myid 是消息接收方（朋友），friid 是自己
-    if (m_events) m_events->onChatSendResult(rs.myid(), rs.result());
+    if (auto* ev = m_events.load()) ev->onChatSendResult(rs.myid(), rs.result());
 }
 
 void ClientCore::onAddFriRq(const char* data, std::size_t len)
 {
     im::proto::AddFriendRq rq;
     if (!parsePayload(data, len, rq)) return;
-    if (m_events) m_events->onAddFriendRequest(rq.myid(), rq.mynick());
+    if (auto* ev = m_events.load()) ev->onAddFriendRequest(rq.myid(), rq.mynick());
 }
 
 void ClientCore::onAddFriRs(const char* data, std::size_t len)
 {
     im::proto::AddFriendRs rs;
     if (!parsePayload(data, len, rs)) return;
-    if (m_events) m_events->onAddFriendResult(rs.result(), rs.mynick());
+    if (auto* ev = m_events.load()) ev->onAddFriendResult(rs.result(), rs.mynick());
 }
 
 void ClientCore::onFriendOfflinePkt(const char* data, std::size_t len)
 {
     im::proto::FriendOffline pkt;
     if (!parsePayload(data, len, pkt)) return;
-    if (m_events) m_events->onFriendOffline(pkt.offlineid());
+    if (auto* ev = m_events.load()) ev->onFriendOffline(pkt.offlineid());
 }
 
 } // namespace im

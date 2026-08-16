@@ -1,6 +1,24 @@
 #include "Kernel.h"
 #include"mediator/TCPServermediator.h"
 #include <vector>
+#include <random>
+#include "sha256.h"
+
+//生成随机盐：16 字节随机数 → 32 字符小写 hex（密码加盐哈希用）
+static std::string generateSaltHex()
+{
+	std::random_device rd;
+	unsigned char bytes[16];
+	for (int i = 0; i < 16; ++i) bytes[i] = static_cast<unsigned char>(rd() & 0xFF);
+	static const char* hex = "0123456789abcdef";
+	std::string salt;
+	salt.reserve(32);
+	for (unsigned char b : bytes) {
+		salt.push_back(hex[(b >> 4) & 0x0F]);
+		salt.push_back(hex[b & 0x0F]);
+	}
+	return salt;
+}
 
 Kernel* Kernel::m_pKernel = nullptr;
 Kernel::Kernel()
@@ -14,7 +32,10 @@ Kernel::~Kernel()
 {
 	if (m_pMediator)
 	{
+		//closeNet 会 join 全部工作线程（含正在 transmitData/DealData 中的），
+		//必须在 join 完成后再置空静态指针，否则进行中的回调会解引用空指针
 		m_pMediator->closeNet();
+		m_pKernel = nullptr;
 		delete m_pMediator;
 		m_pMediator = nullptr;
 	}
@@ -35,6 +56,7 @@ void Kernel::setFunArr()
 	m_dealFunArr[DEF_PROT_CHAT_INFO_RQ      - DEF_BASE] = &Kernel::DealChatRq;
 	m_dealFunArr[DEF_PROT_ADD_FRIEND_RQ		- DEF_BASE] = &Kernel::DealAddFriendRq;
 	m_dealFunArr[DEF_PROT_ADD_FRIEND_RS		- DEF_BASE] = &Kernel::DealAddFriendRs;
+	m_dealFunArr[DEF_PROT_HEARTBEAT_RQ		- DEF_BASE] = &Kernel::DealHeartbeatRq;
 }
 
 //打开服务器
@@ -57,12 +79,20 @@ bool Kernel::startServer()
 		return false;
 	}
 
+	//启动心跳超时扫描线程
+	m_scanRunning = true;
+	m_scanThread = std::thread(&Kernel::scanHeartbeatThread, this);
+
 	return true;
 }
 
 //关闭服务器
 void Kernel::closeServer()
 {
+	//先停扫描线程，避免关停过程中误判超时
+	m_scanRunning = false;
+	if (m_scanThread.joinable()) m_scanThread.join();
+
 	//关闭网络
 	m_pMediator->closeNet();
 	//断开与数据库的连接
@@ -93,6 +123,12 @@ void Kernel::DealData(char* data, int len, NetEndpoint from)
 
 	//取出协议类型（x86/x64 主机序即小端，与客户端线格式一致）
 	protType type = *(protType*)data;
+
+	//任何有效包都刷新该连接的活跃时间（心跳超时判定依据）
+	{
+		lock_guard<mutex> lock(m_lastActiveMutex);
+		m_mapLastActive[from] = time(nullptr);
+	}
 
 	//计算数组下表
 	int index = type - DEF_BASE;
@@ -134,15 +170,22 @@ void Kernel::DealRegisterRq(char* data, int len, NetEndpoint from)
 	//防御性截断（字段软上限，防超长字段写库）
 	std::string nick = utf8Truncate(rq.nick(), USER_NICK_LEN - 1);
 	std::string tel  = utf8Truncate(rq.tel(),  USER_TEL_LEN - 1);
-	std::string pass = utf8Truncate(rq.pass(), USER_PASS_LEN - 1);
+	//密码为客户端已哈希的 64 字符 hex，不再截断（截断会破坏哈希）
+	std::string passHash = rq.pass();
 
-	//转义用户输入，防止 SQL 注入（昵称/电话/密码均来自客户端，不可信）
+	//加盐二次哈希后存储（对齐 QQNT 密码安全：库里不落明文、不落客户端原哈希）
+	const std::string salt = generateSaltHex();
+	const std::string storedHash = im::sha256Hex(salt + passHash);
+
+	//转义用户输入，防止 SQL 注入（昵称/电话/盐/哈希均来自不可信输入或随机值）
 	char escNick[USER_NICK_LEN * 2 + 1] = "";
 	char escTel[USER_TEL_LEN * 2 + 1] = "";
-	char escPass[USER_PASS_LEN * 2 + 1] = "";
+	char escPass[64 * 2 + 1] = "";
+	char escSalt[32 * 2 + 1] = "";
 	m_mysql.EscapeString(nick.c_str(), (int)nick.size(), escNick, sizeof(escNick));
 	m_mysql.EscapeString(tel.c_str(),  (int)tel.size(),  escTel,  sizeof(escTel));
-	m_mysql.EscapeString(pass.c_str(), (int)pass.size(), escPass, sizeof(escPass));
+	m_mysql.EscapeString(storedHash.c_str(), (int)storedHash.size(), escPass, sizeof(escPass));
+	m_mysql.EscapeString(salt.c_str(), (int)salt.size(), escSalt, sizeof(escSalt));
 
 	//2、根据昵称从数据库中查询昵称
 	list<string> listRes;
@@ -170,9 +213,9 @@ void Kernel::DealRegisterRq(char* data, int len, NetEndpoint from)
 		if (listRes.size() == 0)
 		{
 			//如果为空，说明电话号码没被注册
-			//6、把用户注册的信息存入数据库中
-			sprintf_s(sql ,"insert into t_user (name,tel,passwd,feeling,iconid) values ('%s','%s','%s','努力实现财富自由',3);"
-				      ,escNick,escTel,escPass);
+			//6、把用户注册的信息存入数据库中（含盐与加盐哈希）
+			sprintf_s(sql ,"insert into t_user (name,tel,passwd,salt,feeling,iconid) values ('%s','%s','%s','%s','努力实现财富自由',3);"
+				      ,escNick,escTel,escPass,escSalt);
 			if (!m_mysql.UpdateMySql(sql))
 			{
 				cout << "保存信息失败！" << sql << endl;
@@ -213,11 +256,11 @@ void Kernel::DealLoginRq(char* data, int len, NetEndpoint from)
 	char escTel[USER_TEL_LEN * 2 + 1] = "";
 	m_mysql.EscapeString(tel.c_str(), (int)tel.size(), escTel, sizeof(escTel));
 
-	//根据电话号码查询密码
+	//根据电话号码查询密码哈希、盐与用户 id
 	list<string> listRes;
 	char sql[1024] = "";
-	sprintf_s(sql, "select passwd,id from t_user where tel = '%s';", escTel);
-	if (!m_mysql.SelectMySql(sql,2,listRes))
+	sprintf_s(sql, "select passwd,salt,id from t_user where tel = '%s';", escTel);
+	if (!m_mysql.SelectMySql(sql,3,listRes))
 	{
 		cout << "查询数据库失败！" << sql << endl;
 		return;	
@@ -233,21 +276,35 @@ void Kernel::DealLoginRq(char* data, int len, NetEndpoint from)
 	}
 	else
 	{
-		//如果不为空，那就从listRes中取出密码
-		string passLine = listRes.front();
-		listRes.pop_front();   //从list中删除取走的数据
+		//如果不为空，那就从listRes中取出密码哈希、盐、id
+		string storedHash = listRes.front();
+		listRes.pop_front();
+		string salt = listRes.front();
+		listRes.pop_front();
 		int id = stoi(listRes.front());
-		listRes.pop_front();   //从list中删除取走的数据
+		listRes.pop_front();
 
-		//比较取出的密码和登录输入的密码是否相等
-		if (passLine == rq.pass())
+		//比对：sha256(salt + 客户端哈希) == 库里哈希
+		if (im::sha256Hex(salt + rq.pass()) == storedHash)
 		{
 			//如果相等，那么登录成功
 			rs.set_result(LOGIN_SUCCESS);
 			rs.set_userid(id);
 
-			//保存当前用户的id和socket（加锁）
-			setSocket(id, from);
+			//多端互踢（对齐 QQNT kickoff）：
+			//1) 通知旧端被踢下线；2) 先用新 socket 覆盖映射（使旧端的断开上报反查不到 id）；3) 关闭旧连接
+			NetEndpoint oldSock = 0;
+			if (getSocket(id, oldSock) && oldSock != from)
+			{
+				sendPacket(DEF_PROT_KICKED_OFFLINE, "", oldSock);
+				setSocket(id, from);
+				m_pMediator->closeConnection(oldSock);
+				cout << "用户 id=" << id << " 在别处登录，旧连接已踢下线" << endl;
+			}
+			else
+			{
+				setSocket(id, from);
+			}
 
 			sendPacket(DEF_PROT_LOGIN_RS, rs.SerializeAsString(), from);
 
@@ -428,6 +485,37 @@ void Kernel::sendOfflinemsg(int id) {
 	}
 }
 
+//将某用户的下线通知广播给其在线好友
+void Kernel::notifyFriendsOffline(int offlineId)
+{
+	//1、根据id查找下线用户的好友id列表
+	list<string> listRes;
+	char sql[1024] = "";
+	sprintf_s(sql, "select idB from t_friend where idA = '%d';", offlineId);
+	if (!m_mysql.SelectMySql(sql, 1, listRes))
+	{
+		cout << "查询数据库失败！" << sql << endl;
+		return;
+	}
+
+	//统一直接用 pb 组包（不再透传原始包体，逻辑更直观）
+	im::proto::FriendOffline pkt;
+	pkt.set_offlineid(offlineId);
+	const std::string payload = pkt.SerializeAsString();
+
+	//2、遍历好友id列表，给在线好友发送下线通知
+	while (listRes.size() > 0)
+	{
+		int friendid = stoi(listRes.front());
+		listRes.pop_front();
+		NetEndpoint friSock = 0;
+		if (getSocket(friendid, friSock))
+		{
+			sendPacket(DEF_PROT_FRIEND_OFFLINE, payload, friSock);
+		}
+	}
+}
+
 //处理下线请求
 void Kernel::DealOfflineRq(char* data, int len, NetEndpoint from)
 {
@@ -438,46 +526,115 @@ void Kernel::DealOfflineRq(char* data, int len, NetEndpoint from)
 		cout << "解析下线请求失败！" << endl;
 		return;
 	}
-	//1、根据id查找下线用户的好友id列表
-	list<string> listRes;
-	char sql[1024] = "";
-	sprintf_s(sql, "select idB from t_friend where idA = '%d';", offlineRq.offlineid());
-	if (!m_mysql.SelectMySql(sql, 1, listRes))
-	{
-		cout << "查询数据库失败！" << sql << endl;
-		return;
-	}
-	//重组转发用的包体（4B 协议号 + 原 payload，直接透传）
-	std::string body;
-	body.resize(sizeof(protType) + len);
-	protType type = DEF_PROT_FRIEND_OFFLINE;
-	memcpy(&body[0], &type, sizeof(type));
-	memcpy(&body[sizeof(type)], data, len);
 
-	//2、遍历好友id列表
-	int friendid = 0;
-	while (listRes.size() > 0)
-	{
-		//3、取出好友的id
-		friendid = stoi(listRes.front());
-		//4、从列表中删除已经取出的好友id
-		listRes.pop_front();
-		//5、判断好友是否在线（加锁查询 socket，锁外转发）
-		NetEndpoint friSock = 0;
-		if (getSocket(friendid, friSock))
-		{
-			//6、如果在线，就给在线好友发送下线请求
-			m_pMediator->sendData(body.data(), (int)body.size(), friSock);
-		}
+	//1、广播下线通知给在线好友
+	notifyFriendsOffline(offlineRq.offlineid());
 
-	}
-	//7、从map中删除下线用户并取出 socket（加锁），锁外 closesocket
+	//2、从map中删除下线用户并取出 socket（加锁），锁外经 net 层关闭连接
 	NetEndpoint offSock = 0;
 	if (eraseSocket(offlineRq.offlineid(), offSock))
 	{
+		{
+			lock_guard<mutex> lock(m_lastActiveMutex);
+			m_mapLastActive.erase(offSock);
+		}
 		if (offSock > 0)
 		{
-			closesocket((SOCKET)offSock);
+			//socket 关闭权归 net 层：请求关闭而非直接 closesocket，防句柄复用误关
+			m_pMediator->closeConnection(offSock);
+		}
+	}
+}
+
+//net 层上报：连接已断开且 socket 已被 net 层关闭
+void Kernel::DealDisconnect(NetEndpoint sock)
+{
+	//按 socket 反查用户 id 并摘除映射（锁内只做 map 操作）
+	int offlineId = 0;
+	{
+		lock_guard<mutex> lock(m_mapIdtoSocketMutex);
+		for (auto it = m_mapIdtoSocket.begin(); it != m_mapIdtoSocket.end(); ++it)
+		{
+			if (it->second == sock)
+			{
+				offlineId = it->first;
+				m_mapIdtoSocket.erase(it);
+				break;
+			}
+		}
+	}
+	{
+		lock_guard<mutex> lock(m_lastActiveMutex);
+		m_mapLastActive.erase(sock);
+	}
+
+	//找到对应用户则广播下线（未登录的连接断开无需广播）
+	if (offlineId > 0)
+	{
+		cout << "连接断开，用户下线 id=" << offlineId << endl;
+		notifyFriendsOffline(offlineId);
+	}
+}
+
+//处理心跳请求
+void Kernel::DealHeartbeatRq(char* data, int len, NetEndpoint from)
+{
+	//活跃时间已在 DealData 中统一刷新，这里只需回复心跳 RS（空 payload）
+	sendPacket(DEF_PROT_HEARTBEAT_RS, "", from);
+}
+
+//心跳超时扫描线程
+void Kernel::scanHeartbeatThread()
+{
+	while (m_scanRunning)
+	{
+		//分段睡眠，便于 closeServer 快速停止
+		for (int i = 0; i < HEARTBEAT_SCAN_INTERVAL_SEC * 10 && m_scanRunning; ++i)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		}
+		if (!m_scanRunning) break;
+
+		const time_t now = time(nullptr);
+		std::vector<std::pair<int, NetEndpoint>> stale;
+
+		//锁内只收集超时项，锁外执行关闭与广播（避免持锁调用 send/closesocket）
+		{
+			lock_guard<mutex> lockMap(m_mapIdtoSocketMutex);
+			lock_guard<mutex> lockActive(m_lastActiveMutex);
+			for (const auto& kv : m_mapIdtoSocket)
+			{
+				auto it = m_mapLastActive.find(kv.second);
+				if (it == m_mapLastActive.end())
+				{
+					//首次见到（尚未收到任何包），登记当前时间给宽限期
+					m_mapLastActive[kv.second] = now;
+					continue;
+				}
+				if (now - it->second > HEARTBEAT_TIMEOUT_SEC)
+				{
+					stale.push_back(kv);
+				}
+			}
+		}
+
+		for (const auto& kv : stale)
+		{
+			NetEndpoint sock = 0;
+			if (eraseSocket(kv.first, sock))
+			{
+				{
+					lock_guard<mutex> lock(m_lastActiveMutex);
+					m_mapLastActive.erase(sock);
+				}
+				if (sock > 0)
+				{
+					//socket 关闭权归 net 层：请求关闭（该连接 recvThread 的 recv 会返回错误并退出）
+					m_pMediator->closeConnection(sock);
+				}
+				cout << "心跳超时，强制下线 id=" << kv.first << endl;
+				notifyFriendsOffline(kv.first);
+			}
 		}
 	}
 }

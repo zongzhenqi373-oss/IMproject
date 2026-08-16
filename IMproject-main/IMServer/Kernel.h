@@ -3,6 +3,11 @@
 #include<map>
 #include<mutex>
 #include<string>
+#include<thread>
+#include<atomic>
+#include<ctime>
+#include<chrono>
+#include<vector>
 #include"mediator/INetmediator.h"
 #include"net/def.h"
 #include"MySQL/CMySql.h"
@@ -62,6 +67,19 @@ public:
 	//处理添加好友回复
 	void DealAddFriendRs(char* data, int len, NetEndpoint from);
 
+	//处理心跳请求（直接回复空 payload 的心跳 RS）
+	void DealHeartbeatRq(char* data, int len, NetEndpoint from);
+
+	//将某用户的下线通知广播给其在线好友（DealOfflineRq 与心跳超时扫描共用）
+	void notifyFriendsOffline(int offlineId);
+
+	//net 层上报：连接已断开且 socket 已被 net 层关闭
+	//（清理 id→socket 映射与活跃时间，并向其好友广播下线；不得在此中 closesocket）
+	void DealDisconnect(NetEndpoint sock);
+
+	//心跳超时扫描线程：超时连接强制下线并广播好友
+	void scanHeartbeatThread();
+
 
 private:
 	INetmediator* m_pMediator;
@@ -87,5 +105,14 @@ private:
 	bool isOnline(int id);
 	//删除 id 的映射，并返回被删除的 socket（用于后续 closesocket）
 	bool eraseSocket(int id, NetEndpoint& outSock);
+
+	//心跳超时检测：socket → 最近一次收到任意数据的时间（秒）
+	//任何有效包都会在 DealData 中刷新；扫描线程据此判定超时
+	map<NetEndpoint, time_t> m_mapLastActive;
+	mutex m_lastActiveMutex;
+
+	//心跳超时扫描线程
+	std::thread m_scanThread;
+	std::atomic<bool> m_scanRunning{false};
 };
 

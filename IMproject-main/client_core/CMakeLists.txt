@@ -12,7 +12,7 @@ if(MSVC)
     add_compile_options(/utf-8 /W4)
 endif()
 
-# protobuf：协议序列化（生成物已提交于 protocol/generated/，此处直接编译，无需本机 protoc）
+# protobuf：协议序列化。
 # CONFIG 模式：新版 protobuf(>=22) 依赖 abseil，其 cmake config 会通过 find_dependency 传递 absl 头路径与链接库
 if(APPLE)
     list(APPEND CMAKE_PREFIX_PATH
@@ -21,19 +21,35 @@ if(APPLE)
 endif()
 find_package(Protobuf CONFIG REQUIRED)
 
+# pb 生成物策略：Windows 的 VS/qmake 直接编译仓库里提交的 protocol/generated/im.pb.*
+# （与 Windows 侧 vcpkg 运行时 6.33.x 匹配）；
+# 本 CMake 工程改为构建时用本机 protoc 现场生成，保证生成物与本机运行时主版本严格一致
+# （protobuf 有跨版本编译期检查 #if PROTOBUF_VERSION，混用会直接 #error）。
+set(PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../protocol/im.proto)
+set(PROTO_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+file(MAKE_DIRECTORY ${PROTO_GEN_DIR})
+add_custom_command(
+    OUTPUT  ${PROTO_GEN_DIR}/im.pb.cc ${PROTO_GEN_DIR}/im.pb.h
+    COMMAND protobuf::protoc --cpp_out=${PROTO_GEN_DIR}
+            --proto_path=${CMAKE_CURRENT_SOURCE_DIR}/../protocol im.proto
+    DEPENDS ${PROTO_FILE}
+    COMMENT "protoc 生成 im.pb.*（本机运行时版本）"
+)
+
 # ---------------- client_core 静态库 ----------------
 add_library(client_core STATIC
     src/ClientCore.cpp
     src/TcpTransport.cpp
     src/SqliteStorage.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../protocol/generated/im.pb.cc
+    ${PROTO_GEN_DIR}/im.pb.cc
 )
 
 target_include_directories(client_core
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/../protocol/generated
+            ${PROTO_GEN_DIR}
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/asio/include
             ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/../protocol
 )
 
 target_compile_definitions(client_core PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
@@ -59,6 +75,7 @@ if(CLIENT_CORE_BUILD_TESTS)
 
     add_executable(test_protocol tests/test_protocol.cpp)
     target_link_libraries(test_protocol PRIVATE client_core)
+    target_include_directories(test_protocol PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../protocol)
     add_test(NAME protocol COMMAND test_protocol)
 
     add_executable(test_storage tests/test_storage.cpp)

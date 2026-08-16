@@ -96,8 +96,9 @@ unsigned __stdcall TCPServer::acceptThread(void* lpVoid)
 		{
 			//连接成功
 			cout << "Client IP: " << inet_ntoa(addrClient.sin_addr) << endl;
-			//给链接成功的client创建一个接收数据的线程
-			handle = (HANDLE)_beginthreadex(nullptr, 0, &recvThread, pThis, 0, &threadid);
+			//给链接成功的client创建一个接收数据的线程（socket 随参数直传）
+			RecvCtx* ctx = new RecvCtx{ pThis, sock_accept };
+			handle = (HANDLE)_beginthreadex(nullptr, 0, &recvThread, ctx, 0, &threadid);
 			if (handle)
 			{
 				{
@@ -105,6 +106,12 @@ unsigned __stdcall TCPServer::acceptThread(void* lpVoid)
 					pThis->m_listHandle.push_back(handle);
 					pThis->m_addrFrom[threadid] = sock_accept;
 				}
+			}
+			else
+			{
+				//线程创建失败：连接无人接收，直接关闭并释放参数，防止泄漏
+				delete ctx;
+				closesocket(sock_accept);
 			}
 		}
 	}
@@ -114,9 +121,34 @@ unsigned __stdcall TCPServer::acceptThread(void* lpVoid)
 //接收数据的线程函数
 unsigned __stdcall TCPServer::recvThread(void* lpVoid)
 {
-	TCPServer* pThis = (TCPServer*)lpVoid;
-	pThis->recvData();
+	RecvCtx* ctx = (RecvCtx*)lpVoid;
+	TCPServer* pThis = ctx->self;
+	SOCKET s = ctx->sock;
+	delete ctx;
+	pThis->recvData(s);
 	return 1;
+}
+
+//关闭指定客户端连接（业务层经 mediator 调用）
+void TCPServer::closeConnection(NetEndpoint sock)
+{
+	SOCKET s = INVALID_SOCKET;
+	{
+		lock_guard<mutex> lock(m_addrFromMutex);
+		for (auto it = m_addrFrom.begin(); it != m_addrFrom.end(); ++it)
+		{
+			if (it->second == (SOCKET)sock)
+			{
+				s = it->second;
+				m_addrFrom.erase(it);
+				break;
+			}
+		}
+	}
+	//只有条目存在（连接存活且归本层管理）时才执行关闭；否则说明已被本层关闭，直接返回
+	if (s == INVALID_SOCKET) return;
+	shutdown(s, SD_BOTH);
+	closesocket(s);
 }
 
 //关闭网络：回收线程资源，关闭套接字，卸载库
@@ -204,31 +236,10 @@ bool TCPServer::sendData(char* data, int len, NetEndpoint to)
 	return true;
 }
 
-//接收数据
-void TCPServer::recvData()
+//接收数据（socket 由线程参数直传）
+void TCPServer::recvData(SOCKET s)
 {
-	//休眠一会：为了保证acceptTheard能够运行到向map中保存threadid的那行代码
-	Sleep(5);
-
-	//取出当前线程对应的socket
-	//获取当前线程的id
 	unsigned int threadId = GetCurrentThreadId();
-	SOCKET s = INVALID_SOCKET;
-	//从map中取出id对应的socket（加锁，用 find 一次性获取，避免 count+[] 的 TOCTOU）
-	{
-		lock_guard<mutex> lock(m_addrFromMutex);
-		auto it = m_addrFrom.find(threadId);
-		if (it != m_addrFrom.end())
-		{
-			s = it->second;
-		}
-	}
-	if (s == INVALID_SOCKET)
-	{
-		//说明：acceptThread线程可能没创建
-		cout << "TCPServer::recvData socket error" << endl;
-		return;
-	}
 
 	//先接受数据长度，在接收数据内容
 	int offset = 0; //
@@ -284,7 +295,10 @@ void TCPServer::recvData()
 			if (RecvLen == 0)
 			{
 				//一个包数据接收完成，把数据传给中介者类，offset是当前接收到的数据长度
+				//（DealData 为同步调用，返回后缓冲区即可释放：net 层分配 net 层释放）
 				m_mediator->transmitData(pack, offset, s);
+				delete[] pack;
+				pack = nullptr;
 			}
 			else
 			{
@@ -309,5 +323,27 @@ void TCPServer::recvData()
 			break;
 		}
 
+	}
+
+	//连接收尾（net 层独占关闭权）：
+	//仅当自己的条目仍在 m_addrFrom 中时才负责关闭 socket 并上报断开；
+	//条目不存在说明 socket 已被 closeConnection/unInitNet 关闭，本线程绝不再碰
+	//（句柄值可能已被 Winsock 复用，再 closesocket 会误关新连接）。
+	bool owned = false;
+	{
+		lock_guard<mutex> lock(m_addrFromMutex);
+		auto it = m_addrFrom.find(threadId);
+		if (it != m_addrFrom.end())
+		{
+			m_addrFrom.erase(it);
+			owned = true;
+		}
+	}
+	if (owned)
+	{
+		shutdown(s, SD_BOTH);
+		closesocket(s);
+		//上报业务层：清理 id→socket 映射并广播好友下线
+		m_mediator->notifyDisconnect(s);
 	}
 }

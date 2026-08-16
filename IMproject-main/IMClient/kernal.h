@@ -41,6 +41,7 @@ public:
         emit sig_addFriendResult(result, fromUtf8(destNick));
     }
     void onFriendOffline(int userId) override { emit sig_friendOffline(userId); }
+    void onKickedOffline(int reason) override { emit sig_kickedOffline(reason); }
     void onConnectionClosed() override { emit sig_connectionClosed(); }
 
 signals:
@@ -54,6 +55,7 @@ signals:
     void sig_addFriendRequest(int fromId, QString fromNick);
     void sig_addFriendResult(int result, QString destNick);
     void sig_friendOffline(int userId);
+    void sig_kickedOffline(int reason);
     void sig_connectionClosed();
 
 public slots:
@@ -81,6 +83,7 @@ private slots:
     void onAddFriendRequestUi(int fromId, QString fromNick);
     void onAddFriendResultUi(int result, QString destNick);
     void onFriendOfflineUi(int userId);
+    void onKickedOfflineUi(int reason);
     void onConnectionClosedUi();
 
 private:

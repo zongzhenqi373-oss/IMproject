@@ -5,6 +5,7 @@
 #include <iostream>
 #include "client_core/Protocol.h"
 #include "im.pb.h"
+#include "sha256.h"
 
 using namespace im::proto;
 
@@ -62,6 +63,15 @@ int main()
     // 6. 协议号范围校验逻辑（dispatch 边界）
     assert(DEF_PROT_FRIEND_OFFLINE - DEF_BASE < DEF_PROT_COUNT);
     assert(DEF_PROT_REGISTER_RQ == DEF_BASE);
+
+    // 7. SHA-256 正确性（对齐 QQNT 密码哈希，用标准测试向量校验）
+    assert(im::sha256Hex("") ==
+           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    assert(im::sha256Hex("abc") ==
+           "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    // 加盐二次哈希（服务端存储逻辑）确定性：同输入同输出
+    assert(im::sha256Hex("salt" + im::sha256Hex("pass")) ==
+           im::sha256Hex("salt" + im::sha256Hex("pass")));
 
     std::cout << "test_protocol PASSED" << std::endl;
     return 0;

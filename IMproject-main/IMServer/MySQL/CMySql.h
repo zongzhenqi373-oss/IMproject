@@ -6,6 +6,7 @@
 #include <mysql.h>
 #include <string>
 #include <iostream>
+#include <mutex>
 
 #pragma comment(lib,"libmysql.lib")
 
@@ -35,9 +36,13 @@ public:                    //ip,用户名,密码，数据库，端口号
 
  
 private:
-    MYSQL *m_sock;   
-	MYSQL_RES *m_results;   
-	MYSQL_ROW m_record; 
-   
+    MYSQL *m_sock;
+	MYSQL_RES *m_results;
+	MYSQL_ROW m_record;
+
+	//MySQL C API 单连接非线程安全，且 m_results/m_record 为跨调用共享成员。
+	//所有公开接口串行化（recvThread/心跳扫描线程会并发访问本对象）。
+	std::mutex m_mutex;
+
 };
 
