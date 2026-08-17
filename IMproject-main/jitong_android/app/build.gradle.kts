@@ -1,0 +1,76 @@
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.protobuf")
+}
+
+android {
+    namespace = "com.jitong.im"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "com.jitong.im"
+        minSdk = 26
+        targetSdk = 34
+        versionCode = 1
+        versionName = "0.4.0" // M4：注册/登录 + 好友列表 + 文本聊天
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    buildFeatures { compose = true }
+
+    // 与 C++ 双端共用同一份 protocol/im.proto（单一协议事实源）
+    // Kotlin DSL 没有 protobuf 插件动态注册的 proto 访问器，需显式按扩展类型配置
+    sourceSets {
+        named("main") {
+            // AGP8 的 AndroidSourceSet 静态类型上没有 extensions，需显式转为 ExtensionAware
+            (this as org.gradle.api.plugins.ExtensionAware).extensions
+                .configure<org.gradle.api.file.SourceDirectorySet>("proto") {
+                    srcDir("../../protocol")
+                }
+        }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
+// protoc 现场生成 protobuf-javalite 代码，与 client_core/im_server 的 CMake 策略一致：
+// 生成物不进仓库，构建时由本机 protoc 产出，避免版本错配。
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:3.25.3"
+    }
+    generateProtoTasks {
+        all().forEach { task ->
+            task.builtins {
+                create("java") {
+                    option("lite")
+                }
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2024.09.03"))
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.activity:activity-compose:1.9.2")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.5")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.5")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("com.google.protobuf:protobuf-javalite:3.25.3")
+
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
+}
