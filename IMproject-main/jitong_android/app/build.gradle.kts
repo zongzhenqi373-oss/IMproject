@@ -14,7 +14,7 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = 1
-        versionName = "0.4.0" // M4：注册/登录 + 好友列表 + 文本聊天
+        versionName = "0.5.0" // M4+：默认直连/头像/资料卡/图片收发（+面板）
     }
 
     compileOptions {

@@ -36,8 +36,17 @@ class ImClient {
             val online: Boolean,
         ) : Event
 
-        /** 收到文本消息（在线转发或离线补发）；图片消息属 M5 范围，本期忽略 */
+        /** 收到文本消息（在线转发或离线补发） */
         data class ChatReceived(val fromId: Int, val text: String, val msgId: String) : Event
+
+        /** 收到图片消息（在线转发或离线补发），字节为原始图片数据 */
+        data class ImageReceived(
+            val fromId: Int,
+            val bytes: ByteArray,
+            val w: Int,
+            val h: Int,
+            val msgId: String,
+        ) : Event
 
         /** 发送回执：peerId=接收方好友，result=CHAT_RESULT_SUCC(已送达)/FAIL(已转存离线) */
         data class ChatSendResult(val peerId: Int, val result: Int, val msgId: String) : Event
@@ -115,6 +124,20 @@ class ImClient {
         send(Protocol.CHAT_INFO_RQ, rq.toByteArray())
     }
 
+    /** 发送图片：字节内联在 ChatInfoRq（设计 ≤500KB 压缩图，服务端落盘并转发/转存） */
+    suspend fun sendImage(friId: Int, bytes: ByteArray, w: Int, h: Int, msgId: String) {
+        val rq = Im.ChatInfoRq.newBuilder()
+            .setMyid(myId)
+            .setFriid(friId)
+            .setType(Im.MsgType.IMAGE)
+            .setImageData(com.google.protobuf.ByteString.copyFrom(bytes))
+            .setImageWidth(w)
+            .setImageHeight(h)
+            .setMsgId(msgId)
+            .build()
+        send(Protocol.CHAT_INFO_RQ, rq.toByteArray())
+    }
+
     /** 主动下线：通知服务端（其会广播好友）后关闭连接 */
     suspend fun logout() {
         if (connected && myId > 0) {
@@ -172,8 +195,17 @@ class ImClient {
 
             Protocol.CHAT_INFO_RQ -> {
                 val rq = Im.ChatInfoRq.parseFrom(f.payload)
-                if (rq.type == Im.MsgType.TEXT) {
-                    _events.emit(Event.ChatReceived(rq.myid, rq.msg, rq.msgId))
+                when (rq.type) {
+                    Im.MsgType.TEXT ->
+                        _events.emit(Event.ChatReceived(rq.myid, rq.msg, rq.msgId))
+                    Im.MsgType.IMAGE ->
+                        _events.emit(
+                            Event.ImageReceived(
+                                rq.myid, rq.imageData.toByteArray(),
+                                rq.imageWidth, rq.imageHeight, rq.msgId,
+                            )
+                        )
+                    else -> Unit // FILE 属 M7
                 }
             }
 
@@ -229,5 +261,8 @@ class ImClient {
     companion object {
         /** 30s 一次心跳，与服务端 90s 超时空窗对齐 client_core */
         const val HEARTBEAT_INTERVAL_MS = 30_000L
+
+        /** 默认服务端地址：模拟器经 10.0.2.2 访问宿主 Mac */
+        const val DEFAULT_HOST = "10.0.2.2"
     }
 }

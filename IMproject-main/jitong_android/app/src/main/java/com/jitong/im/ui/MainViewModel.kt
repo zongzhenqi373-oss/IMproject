@@ -20,11 +20,17 @@ data class Friend(
     val online: Boolean,
 )
 
+enum class MsgKind { TEXT, IMAGE }
+
 data class ChatMessage(
     val msgId: String,
     val peerId: Int,
     val fromMe: Boolean,
-    val text: String,
+    val text: String = "",
+    val kind: MsgKind = MsgKind.TEXT,
+    val imageBytes: ByteArray? = null,
+    val imgW: Int = 0,
+    val imgH: Int = 0,
     val ts: Long = System.currentTimeMillis(),
     val status: Status = Status.RECEIVED,
 ) {
@@ -35,6 +41,14 @@ class MainViewModel : ViewModel() {
 
     private val client = ImClient()
 
+    /** 当前登录账号 id（未登录为 0） */
+    val myId: Int get() = client.myId
+
+    /** 轻提示（文件传输占位等场景） */
+    fun notify(msg: String) {
+        viewModelScope.launch { _toast.emit(msg) }
+    }
+
     private val _screen = MutableStateFlow(Screen.Login)
     val screen: StateFlow<Screen> = _screen
 
@@ -43,6 +57,9 @@ class MainViewModel : ViewModel() {
 
     private val _myNick = MutableStateFlow("")
     val myNick: StateFlow<String> = _myNick
+
+    private val _myFeeling = MutableStateFlow("")
+    val myFeeling: StateFlow<String> = _myFeeling
 
     /** 好友列表：在线的排前面（每次刷新重排） */
     private val _friends = MutableStateFlow<List<Friend>>(emptyList())
@@ -68,14 +85,14 @@ class MainViewModel : ViewModel() {
 
     // ---------------- 登录 / 注册 ----------------
 
-    fun login(host: String, tel: String, pass: String) {
+    fun login(tel: String, pass: String) {
         if (tel.isBlank() || pass.isBlank()) {
             _loginTip.value = "请输入手机号和密码"
             return
         }
         viewModelScope.launch {
             _loginTip.value = "连接服务器…"
-            if (!client.connect(host.trim())) {
+            if (!client.connect(ImClient.DEFAULT_HOST)) {
                 _loginTip.value = "连接失败，请确认 im_server 已启动"
                 return@launch
             }
@@ -84,14 +101,14 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    fun register(host: String, nick: String, tel: String, pass: String) {
+    fun register(nick: String, tel: String, pass: String) {
         if (nick.isBlank() || tel.isBlank() || pass.isBlank()) {
             _loginTip.value = "请填写完整注册信息"
             return
         }
         viewModelScope.launch {
             _loginTip.value = "连接服务器…"
-            if (!client.connect(host.trim())) {
+            if (!client.connect(ImClient.DEFAULT_HOST)) {
                 _loginTip.value = "连接失败，请确认 im_server 已启动"
                 return@launch
             }
@@ -127,6 +144,21 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch { client.sendChat(peer.id, text, msgId) }
     }
 
+    /** 发送图片（压缩已由调用方完成），本地即时上屏 + 等待回执 */
+    fun sendImage(bytes: ByteArray, w: Int, h: Int) {
+        val peer = _chatPeer.value ?: return
+        if (bytes.isEmpty()) return
+        val msgId = UUID.randomUUID().toString()
+        append(
+            ChatMessage(
+                msgId, peer.id, fromMe = true, kind = MsgKind.IMAGE,
+                imageBytes = bytes, imgW = w, imgH = h,
+                status = ChatMessage.Status.SENDING,
+            )
+        )
+        viewModelScope.launch { client.sendImage(peer.id, bytes, w, h, msgId) }
+    }
+
     // ---------------- 事件归集 ----------------
 
     private suspend fun collectEvents() {
@@ -152,6 +184,7 @@ class MainViewModel : ViewModel() {
                 is ImClient.Event.UserOrFriendInfo -> {
                     if (e.userId == client.myId) {
                         _myNick.value = e.nick
+                        _myFeeling.value = e.feeling
                     } else {
                         upsertFriend(Friend(e.userId, e.nick, e.feeling, e.online))
                         // 聊天页顶部在线状态联动
@@ -163,6 +196,14 @@ class MainViewModel : ViewModel() {
 
                 is ImClient.Event.ChatReceived ->
                     append(ChatMessage(e.msgId, e.fromId, fromMe = false, text = e.text))
+
+                is ImClient.Event.ImageReceived ->
+                    append(
+                        ChatMessage(
+                            e.msgId, e.fromId, fromMe = false, kind = MsgKind.IMAGE,
+                            imageBytes = e.bytes, imgW = e.w, imgH = e.h,
+                        )
+                    )
 
                 is ImClient.Event.ChatSendResult -> updateStatus(
                     e.peerId, e.msgId,

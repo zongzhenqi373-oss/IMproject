@@ -18,7 +18,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -28,13 +27,12 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
-/** 登录/注册页：模拟器默认经 10.0.2.2 访问 Mac 宿主 im_server */
+/** 登录/注册页：服务器地址默认 10.0.2.2（模拟器直连宿主 Mac im_server），界面不暴露 */
 @Composable
 fun LoginScreen(vm: MainViewModel) {
     val tip by vm.loginTip.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableIntStateOf(0) }
 
-    var host by rememberSaveable { mutableStateOf("10.0.2.2") }
     var nick by rememberSaveable { mutableStateOf("") }
     var tel by rememberSaveable { mutableStateOf("") }
     var pass by rememberSaveable { mutableStateOf("") }
@@ -47,17 +45,7 @@ fun LoginScreen(vm: MainViewModel) {
         verticalArrangement = Arrangement.Center,
     ) {
         Text("即通", style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.primary)
-        Text("即时通讯演示 · M4", style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(24.dp))
-
-        OutlinedTextField(
-            value = host,
-            onValueChange = { host = it },
-            label = { Text("服务器地址（模拟器填 10.0.2.2）") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(12.dp))
 
         TabRow(selectedTabIndex = tab) {
             Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("登录") })
@@ -97,7 +85,7 @@ fun LoginScreen(vm: MainViewModel) {
 
         Button(
             onClick = {
-                if (tab == 0) vm.login(host, tel, pass) else vm.register(host, nick, tel, pass)
+                if (tab == 0) vm.login(tel, pass) else vm.register(nick, tel, pass)
             },
             modifier = Modifier.fillMaxWidth(),
         ) {
