@@ -6,47 +6,28 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(CLIENT_CORE_BUILD_TESTS "Build client_core unit tests" ON)
+option(CLIENT_CORE_BUILD_TOOLS "Build im_cli demo client" ON)
 
 # MSVC 默认按系统代码页解析源文件，强制 UTF-8 以正确编译中文注释/字符串
 if(MSVC)
     add_compile_options(/utf-8 /W4)
 endif()
 
-# protobuf：协议序列化。
-# CONFIG 模式：新版 protobuf(>=22) 依赖 abseil，其 cmake config 会通过 find_dependency 传递 absl 头路径与链接库
-if(APPLE)
-    list(APPEND CMAKE_PREFIX_PATH
-        /opt/homebrew/opt/protobuf /usr/local/opt/protobuf
-        /opt/homebrew/opt/abseil   /usr/local/opt/abseil)
+# pb 生成物策略：统一由 protocol/ 的 im_protocol 静态库提供（构建时本机 protoc 现场生成）。
+# Windows 的 VS/qmake 不使用 CMake，它们直接编译仓库提交的 protocol/generated/im.pb.*。
+if(NOT TARGET im_protocol)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../protocol ${CMAKE_BINARY_DIR}/protocol)
 endif()
-find_package(Protobuf CONFIG REQUIRED)
-
-# pb 生成物策略：Windows 的 VS/qmake 直接编译仓库里提交的 protocol/generated/im.pb.*
-# （与 Windows 侧 vcpkg 运行时 6.33.x 匹配）；
-# 本 CMake 工程改为构建时用本机 protoc 现场生成，保证生成物与本机运行时主版本严格一致
-# （protobuf 有跨版本编译期检查 #if PROTOBUF_VERSION，混用会直接 #error）。
-set(PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../protocol/im.proto)
-set(PROTO_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
-file(MAKE_DIRECTORY ${PROTO_GEN_DIR})
-add_custom_command(
-    OUTPUT  ${PROTO_GEN_DIR}/im.pb.cc ${PROTO_GEN_DIR}/im.pb.h
-    COMMAND protobuf::protoc --cpp_out=${PROTO_GEN_DIR}
-            --proto_path=${CMAKE_CURRENT_SOURCE_DIR}/../protocol im.proto
-    DEPENDS ${PROTO_FILE}
-    COMMENT "protoc 生成 im.pb.*（本机运行时版本）"
-)
 
 # ---------------- client_core 静态库 ----------------
 add_library(client_core STATIC
     src/ClientCore.cpp
     src/TcpTransport.cpp
     src/SqliteStorage.cpp
-    ${PROTO_GEN_DIR}/im.pb.cc
 )
 
 target_include_directories(client_core
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
-            ${PROTO_GEN_DIR}
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/asio/include
             ${CMAKE_CURRENT_SOURCE_DIR}/src
             ${CMAKE_CURRENT_SOURCE_DIR}/../protocol
@@ -55,7 +36,7 @@ target_include_directories(client_core
 target_compile_definitions(client_core PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
 
 find_package(Threads REQUIRED)
-target_link_libraries(client_core PUBLIC Threads::Threads protobuf::libprotobuf)
+target_link_libraries(client_core PUBLIC Threads::Threads im_protocol)
 
 # asio standalone 在 Windows 需要 ws2_32
 if(WIN32)
@@ -67,7 +48,7 @@ if(APPLE)
     list(APPEND CMAKE_PREFIX_PATH /opt/homebrew/opt/sqlite /usr/local/opt/sqlite)
 endif()
 find_package(SQLite3 REQUIRED)
-target_link_libraries(client_core PUBLIC SQLite::SQLite3)
+target_link_libraries(client_core PUBLIC SQLite3::SQLite3)
 
 # ---------------- 单元测试 ----------------
 if(CLIENT_CORE_BUILD_TESTS)
@@ -91,4 +72,11 @@ if(CLIENT_CORE_BUILD_TESTS)
         target_link_libraries(test_integration PRIVATE ws2_32)
     endif()
     add_test(NAME integration COMMAND test_integration)
+endif()
+
+# ---------------- im_cli 命令行演示客户端 ----------------
+if(CLIENT_CORE_BUILD_TOOLS)
+    add_executable(im_cli tools/im_cli.cpp)
+    target_link_libraries(im_cli PRIVATE client_core)
+    target_include_directories(im_cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../protocol)
 endif()

@@ -33,6 +33,10 @@ public:
     void onChatMessage(int fromId, const std::string& msg) override {
         emit sig_chatMessage(fromId, fromUtf8(msg));
     }
+    void onImageMessage(int fromId, const std::string&, int, int, const std::string&) override {
+        // Qt 客户端为 legacy 演示端：图片消息以占位文本提示（完整图片 UI 在 Android 端实现）
+        emit sig_chatMessage(fromId, QStringLiteral("[图片消息]"));
+    }
     void onChatSendResult(int friId, int result) override { emit sig_chatSendResult(friId, result); }
     void onAddFriendRequest(int fromId, const std::string& fromNick) override {
         emit sig_addFriendRequest(fromId, fromUtf8(fromNick));

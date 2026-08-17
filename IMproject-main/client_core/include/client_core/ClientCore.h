@@ -41,6 +41,10 @@ public:
     // 收到聊天消息（含离线补发），msg 为 UTF-8
     virtual void onChatMessage(int fromId, const std::string& msgUtf8) = 0;
 
+    // 收到图片消息（含离线补发）：imageBytes 为压缩后图片字节，w/h 为尺寸
+    virtual void onImageMessage(int fromId, const std::string& imageBytes,
+                                int w, int h, const std::string& msgId) = 0;
+
     // 聊天发送结果：proto::CHAT_RESULT_SUCC（已送达）/ CHAT_RESULT_FAIL（对方离线已转存）
     virtual void onChatSendResult(int friId, int result) = 0;
 
@@ -91,6 +95,8 @@ public:
     void sendRegister(const std::string& nickUtf8, const std::string& tel, const std::string& pass);
     void sendLogin(const std::string& tel, const std::string& pass);
     void sendChatMessage(int friId, const std::string& msgUtf8);
+    // 发送图片消息：imageBytes 为压缩后图片字节（建议 ≤500KB），w/h 为尺寸
+    void sendImageMessage(int friId, const std::string& imageBytes, int w, int h);
     void sendAddFriendRequest(const std::string& friNickUtf8);
     // 回复添加好友请求：agree=true 同意，false 拒绝；destId/destNick 为请求发起人
     void answerAddFriend(int destId, const std::string& destNickUtf8, bool agree);

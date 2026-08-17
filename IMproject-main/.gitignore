@@ -1,6 +1,10 @@
 # 编译产物
 build/
 *.obj
+
+# im_server 运行时产物
+im_server/data/
+im_server/uploads/
 *.o
 *.tlog
 *.ipch

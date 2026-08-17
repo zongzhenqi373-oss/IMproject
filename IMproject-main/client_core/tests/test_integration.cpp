@@ -188,6 +188,7 @@ struct RecordingEvents : IClientEvents {
     void onSelfInfo(const UserInfo& info) override { std::lock_guard<std::mutex> l(mtx); self = info; gotSelf = true; notify(); }
     void onFriendInfo(const im::FriendInfo& info) override { std::lock_guard<std::mutex> l(mtx); friends.push_back(info); notify(); }
     void onChatMessage(int fromId, const std::string& msg) override { std::lock_guard<std::mutex> l(mtx); chats.emplace_back(fromId, msg); notify(); }
+    void onImageMessage(int, const std::string&, int, int, const std::string&) override {}
     void onChatSendResult(int friId, int result) override { std::lock_guard<std::mutex> l(mtx); chatResults.emplace_back(friId, result); notify(); }
     void onAddFriendRequest(int, const std::string&) override {}
     void onAddFriendResult(int, const std::string&) override {}

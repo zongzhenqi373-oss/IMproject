@@ -4,8 +4,11 @@
 #include "im.pb.h"
 #include "sha256.h"
 
+#include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <ctime>
+#include <random>
 
 namespace im {
 
@@ -23,6 +26,22 @@ std::int64_t steadyNowMs()
 {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+// 生成消息唯一 id（msg_id）：时间戳 + 自增计数 + 随机数，漫游/去重/回执关联用
+std::string makeMsgId()
+{
+    static std::atomic<std::uint64_t> counter{0};
+    static std::random_device rd;
+    const std::uint64_t rand64 = (static_cast<std::uint64_t>(rd()) << 32) | rd();
+    const std::uint64_t ts = static_cast<std::uint64_t>(steadyNowMs());
+    const std::uint64_t seq = counter.fetch_add(1);
+    char buf[40];
+    std::snprintf(buf, sizeof(buf), "%013llx%05llx%016llx",
+                  static_cast<unsigned long long>(ts),
+                  static_cast<unsigned long long>(seq & 0xFFFFF),
+                  static_cast<unsigned long long>(rand64));
+    return buf;
 }
 } // namespace
 
@@ -141,6 +160,8 @@ void ClientCore::sendChatMessage(int friId, const std::string& msgUtf8)
     rq.set_myid(m_myId);
     rq.set_friid(friId);
     rq.set_msg(msg);
+    rq.set_type(im::proto::TEXT);
+    rq.set_msg_id(makeMsgId());
     sendPacket(DEF_PROT_CHAT_INFO_RQ, rq.SerializeAsString());
 
     // 本地持久化：发出的消息
@@ -150,6 +171,21 @@ void ClientCore::sendChatMessage(int friId, const std::string& msgUtf8)
                                 static_cast<std::int64_t>(std::time(nullptr)));
         }
     }
+}
+
+void ClientCore::sendImageMessage(int friId, const std::string& imageBytes, int w, int h)
+{
+    if (imageBytes.empty()) return;
+
+    im::proto::ChatInfoRq rq;
+    rq.set_myid(m_myId);
+    rq.set_friid(friId);
+    rq.set_type(im::proto::IMAGE);
+    rq.set_image_data(imageBytes);
+    rq.set_image_width(w);
+    rq.set_image_height(h);
+    rq.set_msg_id(makeMsgId());
+    sendPacket(DEF_PROT_CHAT_INFO_RQ, rq.SerializeAsString());
 }
 
 void ClientCore::sendAddFriendRequest(const std::string& friNickUtf8)
@@ -289,7 +325,15 @@ void ClientCore::onChatInfoRq(const char* data, std::size_t len)
     im::proto::ChatInfoRq rq;
     if (!parsePayload(data, len, rq)) return;
 
-    // 本地持久化：收到的消息（rq.myid 是发送方）
+    // 图片消息单独回调（rq.myid 是发送方）
+    if (rq.type() == im::proto::IMAGE) {
+        if (auto* ev = m_events.load()) {
+            ev->onImageMessage(rq.myid(), rq.image_data(), rq.image_width(), rq.image_height(), rq.msg_id());
+        }
+        return;
+    }
+
+    // 本地持久化：收到的文本消息
     if (m_myId > 0) {
         if (auto* st = m_storage.load()) {
             st->saveChatMessage(m_myId, rq.myid(), false, rq.msg(),

@@ -43,11 +43,23 @@ message FriendInfo {
 }
 
 // ---------------- 聊天 ----------------
+// 消息类型（FILE 为 M7 文件传输预留）
+enum MsgType {
+  TEXT = 0;
+  IMAGE = 1;
+  FILE = 2;
+}
+
 // C→S：我发给好友；S→C：好友发给我 / 离线消息补发（此时 myid=发送方, friid=我）
 message ChatInfoRq {
   int32 myid = 1;
   int32 friid = 2;
-  string msg = 3; // UTF-8，软上限 proto::CHAT_MSG_LEN
+  string msg = 3;           // TEXT 时使用，UTF-8，软上限 proto::CHAT_MSG_LEN
+  MsgType type = 4;         // 消息类型
+  bytes image_data = 5;     // IMAGE 时使用（压缩后字节，内联通道 ≤500KB）
+  int32 image_width = 6;
+  int32 image_height = 7;
+  string msg_id = 8;        // 客户端生成 UUID，漫游/去重/回执关联用
 }
 
 // S→C：发送结果回执（myid=接收方朋友, friid=自己）
@@ -55,6 +67,7 @@ message ChatInfoRs {
   int32 myid = 1;
   int32 friid = 2;
   int32 result = 3; // proto::CHAT_RESULT_SUCC / CHAT_RESULT_FAIL
+  string msg_id = 4; // 回执关联的发送消息 id
 }
 
 // ---------------- 添加好友 ----------------
