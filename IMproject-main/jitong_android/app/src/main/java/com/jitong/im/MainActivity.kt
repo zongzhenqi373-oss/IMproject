@@ -11,26 +11,31 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.jitong.im.data.ChatStore
 import com.jitong.im.ui.ChatScreen
 import com.jitong.im.ui.FriendListScreen
 import com.jitong.im.ui.LoginScreen
 import com.jitong.im.ui.MainViewModel
 import com.jitong.im.ui.Screen
 import com.jitong.im.ui.theme.JitongTheme
+import com.tencent.mmkv.MMKV
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        MMKV.initialize(this) // KV 凭证存储（自动登录）
         setContent {
             JitongTheme {
-                AppNav()
+                val vm: MainViewModel = viewModel()
+                vm.attachStore(ChatStore(applicationContext))
+                AppNav(vm)
             }
         }
     }
 }
 
 @Composable
-private fun AppNav(vm: MainViewModel = viewModel()) {
+private fun AppNav(vm: MainViewModel) {
     val screen by vm.screen.collectAsStateWithLifecycle()
     val context = LocalContext.current
 

@@ -1,0 +1,80 @@
+package com.jitong.im.data.db
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Transaction
+
+@Dao
+interface MessageDao {
+
+    /** @return 新行 rowid；-1 = msg_id 已存在（幂等忽略） */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(entity: MessageEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFts(entity: MessageFtsEntity)
+
+    /** 同一事务双写 messages 与 messages_fts（独立存储模式的同步策略） */
+    @Transaction
+    suspend fun insertWithFts(entity: MessageEntity): Boolean {
+        val rowId = insert(entity)
+        if (rowId == -1L) return false
+        if (entity.type == 0 && !entity.content.isNullOrEmpty()) {
+            insertFts(MessageFtsEntity(content = entity.content, msgId = entity.msgId))
+        }
+        return true
+    }
+
+    @Query("SELECT * FROM messages WHERE ownerId = :ownerId ORDER BY ts, id")
+    suspend fun allForOwner(ownerId: Int): List<MessageEntity>
+
+    @Query("UPDATE messages SET status = :status WHERE ownerId = :ownerId AND msgId = :msgId")
+    suspend fun updateStatus(ownerId: Int, msgId: String, status: Int)
+
+    /** FTS 前缀匹配（simple 分词：英文按词、中文整串前缀） */
+    @Query(
+        """SELECT m.* FROM messages m JOIN messages_fts f ON m.msgId = f.msgId
+           WHERE m.ownerId = :ownerId AND messages_fts MATCH :pattern
+           ORDER BY m.ts DESC LIMIT 100"""
+    )
+    suspend fun searchFts(ownerId: Int, pattern: String): List<MessageEntity>
+
+    /** 中文子串兜底（simple 分词对 CJK 只支持整串前缀，LIKE 补"包含"语义） */
+    @Query(
+        """SELECT * FROM messages WHERE ownerId = :ownerId AND type = 0
+           AND content LIKE '%' || :kw || '%' ORDER BY ts DESC LIMIT 100"""
+    )
+    suspend fun searchLike(ownerId: Int, kw: String): List<MessageEntity>
+}
+
+@Dao
+interface ConversationDao {
+
+    @Query("SELECT * FROM conversations WHERE ownerId = :ownerId")
+    suspend fun allForOwner(ownerId: Int): List<ConversationEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(c: ConversationEntity): Long
+
+    @Query(
+        """UPDATE conversations SET lastMsg = :lastMsg, lastTs = :ts, unread = unread + :delta
+           WHERE conversationId = :id"""
+    )
+    suspend fun bump(id: Long, lastMsg: String, ts: Long, delta: Int)
+
+    @Query("UPDATE conversations SET unread = 0 WHERE conversationId = :id")
+    suspend fun clearUnread(id: Long)
+
+    /** 消息驱动会话行：不存在则建，存在则刷新最后消息/时间/未读 */
+    @Transaction
+    suspend fun upsertOnMessage(
+        id: Long, ownerId: Int, peerId: Int,
+        lastMsg: String, ts: Long, incrUnread: Boolean,
+    ) {
+        if (insertIgnore(ConversationEntity(id, ownerId, peerId, lastMsg, ts, 0)) == -1L) {
+            bump(id, lastMsg, ts, if (incrUnread) 1 else 0)
+        }
+    }
+}

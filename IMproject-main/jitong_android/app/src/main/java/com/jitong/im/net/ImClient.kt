@@ -113,6 +113,15 @@ class ImClient {
         send(Protocol.LOGIN_RQ, rq.toByteArray())
     }
 
+    /** 用本地保存的密码哈希直接登录（自动登录场景，明文不出 MMKV） */
+    suspend fun loginWithHash(tel: String, passHash: String) {
+        val rq = Im.LoginRq.newBuilder()
+            .setTel(tel)
+            .setPass(passHash)
+            .build()
+        send(Protocol.LOGIN_RQ, rq.toByteArray())
+    }
+
     suspend fun sendChat(friId: Int, text: String, msgId: String) {
         val rq = Im.ChatInfoRq.newBuilder()
             .setMyid(myId)

@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.protobuf")
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -70,6 +71,14 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.5")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.google.protobuf:protobuf-javalite:3.25.3")
+
+    // Room：消息/会话本地库（FTS4 独立存储，同事务双写）
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
+
+    // MMKV：KV 凭证/配置（对齐 QQNT 双存储：MMKV=KV，Room=消息）
+    implementation("com.tencent:mmkv-static:1.3.5")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
