@@ -157,6 +157,17 @@ void Dispatcher::onLoginRq(const std::shared_ptr<Session>& s, const std::string&
         }
         s->deliver(DEF_PROT_CHAT_INFO_RQ, out.SerializeAsString());
         deliveredIds.push_back(m.msgId);
+
+        // 送达回执：原发送方在线则通知其把"对方离线，已转存"刷新为"已送达"
+        // （复用 ChatInfoRs 语义：myid=接收方好友，friid=回执去向即原发送方，关联 msg_id）
+        if (auto sender = m_server.presence().get(m.senderId)) {
+            ChatInfoRs receipt;
+            receipt.set_myid(userId);
+            receipt.set_friid(m.senderId);
+            receipt.set_result(CHAT_RESULT_SUCC);
+            receipt.set_msg_id(m.msgId);
+            sender->deliver(DEF_PROT_CHAT_INFO_RS, receipt.SerializeAsString());
+        }
     }
     m_server.db().markDelivered(deliveredIds);
     if (!undelivered.empty()) {

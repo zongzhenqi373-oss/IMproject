@@ -226,6 +226,15 @@ int main()
         return false;
     }));
 
+    // 送达回执：b3 上线收讫后，a2 应收到补发消息的 SUCC 回执（"已转存"→"已送达"）
+    // （在线图片 SUCC 1 次 + 离线文本/图片补发回执 ≥1 次，这里断言总数 ≥2）
+    assert(ea2.waitFor([&] {
+        int succ = 0;
+        for (const auto& cr : ea2.chatResults)
+            if (cr.first == idB && cr.second == CHAT_RESULT_SUCC) ++succ;
+        return succ >= 2;
+    }));
+
     a2.disconnect();
     b3.disconnect();
     server.stop();
