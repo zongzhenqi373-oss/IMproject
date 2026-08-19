@@ -27,6 +27,13 @@ object Protocol {
     const val ROAM_MSG_RQ = DEF_BASE + 15
     const val ROAM_MSG_RS = DEF_BASE + 16
 
+    const val FILE_OFFER_RQ = DEF_BASE + 17
+    const val FILE_OFFER_RS = DEF_BASE + 18
+    const val FILE_CHUNK_RQ = DEF_BASE + 19
+    const val FILE_COMPLETE_RQ = DEF_BASE + 20
+    const val FILE_PROGRESS_RS = DEF_BASE + 21
+    const val FILE_DOWNLOAD_RQ = DEF_BASE + 22
+
     /** 单包最大长度（含 4B 协议号），防恶意超大包 OOM */
     const val MAX_PACK_LEN = 10 * 1024 * 1024
 
@@ -49,4 +56,13 @@ object Protocol {
     const val ADD_FRIEND_REJECT = 1
     const val ADD_FRIEND_OFFLINE = 2
     const val ADD_FRIEND_NOTEXIT = 3
+
+    const val FILE_OFFER_OK = 0
+    const val FILE_OFFER_TOO_LARGE = 1
+    const val FILE_ST_UPLOADING = 0
+    const val FILE_ST_VERIFYING = 1
+    const val FILE_ST_DONE = 2
+    const val FILE_ST_FAILED = 3
+    const val FILE_CHUNK_SIZE = 256 * 1024
+    const val FILE_MAX_SIZE = 100L * 1024 * 1024
 }
