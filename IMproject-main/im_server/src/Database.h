@@ -44,6 +44,8 @@ struct StoredMessage {
     int imgH = 0;
     std::int64_t ts = 0;
     std::int64_t seq = 0;   // 会话级单调递增序列号（服务端分配，接收方据此排序）
+    std::string fileId;          // type=2 文件消息：服务端文件标识（=发送方 msg_id）
+    std::int64_t fileSize = 0;   // type=2：文件字节数
 };
 
 class Database {
@@ -90,7 +92,9 @@ public:
     // 某会话（userId↔peerId）比 beforeSeq 更早的 limit 条（seq 倒序）
     std::vector<StoredMessage> roamMessages(int userId, int peerId, std::int64_t beforeSeq, int limit);
 
-private:
+    // 按 msg_id 取单条消息（下载寻址：file_id==msg_id）；不存在返回 false
+    bool getMessageByMsgId(const std::string& msgId, StoredMessage& out);
+
     struct Conn {
         sqlite3* db = nullptr;
         std::mutex mtx;
