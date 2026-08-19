@@ -95,6 +95,7 @@ public:
     // 按 msg_id 取单条消息（下载寻址：file_id==msg_id）；不存在返回 false
     bool getMessageByMsgId(const std::string& msgId, StoredMessage& out);
 
+private:
     struct Conn {
         sqlite3* db = nullptr;
         std::mutex mtx;
