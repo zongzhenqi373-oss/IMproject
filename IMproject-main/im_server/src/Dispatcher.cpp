@@ -253,15 +253,19 @@ void Dispatcher::onChatRq(const std::shared_ptr<Session>& s, const std::string& 
     rs.set_msg_id(rq.msg_id());
 
     if (auto target = m_server.presence().get(rq.friid())) {
-        // 在线：存历史（已投递）+ 原样转发（含图片字节）
+        // 在线：存历史（已投递）+ 转发（含图片字节）。补上服务端权威时间 ts + 会话 seq，
+        // 与离线补发口径一致，接收方据此排序，不依赖"收到时刻"。
         m_server.db().saveMessage(m, true);
-        target->deliver(DEF_PROT_CHAT_INFO_RQ, payload);
+        rq.set_ts(m.ts);
+        rq.set_seq(m.seq);
+        target->deliver(DEF_PROT_CHAT_INFO_RQ, rq.SerializeAsString());
         rs.set_result(CHAT_RESULT_SUCC);
     } else {
         // 离线：存历史（未投递），上线补发
         m_server.db().saveMessage(m, false);
         rs.set_result(CHAT_RESULT_FAIL);
     }
+    rs.set_seq(m.seq); // 回执带回服务端分配的会话 seq，发送方据此校正本地消息顺序
     s->deliver(DEF_PROT_CHAT_INFO_RS, rs.SerializeAsString());
 }
 
@@ -371,15 +375,15 @@ void Dispatcher::onRoamMsgRq(const std::shared_ptr<Session>& s, const std::strin
     RoamMsgRs rs;
     rs.set_peer_id(peerId);
     rs.set_has_more(static_cast<int>(rows.size()) == limit); // 满 N 条即认为还有更早的
-    std::int64_t minSeq = 0;
     for (const auto& m : rows) {
-        // 图片读盘回传完整字节；文件丢失则跳过该条
+        // 图片读盘回传完整字节；文件丢失则跳过该条（但不影响下面的游标推进）
         im::proto::ChatInfoRq tmp;
         if (!fillChatInfo(tmp, m, /*withImage=*/true)) continue;
         *rs.add_msgs() = std::move(tmp);
-        if (minSeq == 0 || m.seq < minSeq) minSeq = m.seq;
     }
-    rs.set_min_seq(minSeq);
+    // 游标取本批 DB 原始最小 seq（rows 按 seq DESC，末条最小）。即使整页图片文件丢失被跳过，
+    // 游标也随之前进，避免客户端上拉时卡在同一页反复空拉。
+    rs.set_min_seq(rows.empty() ? 0 : rows.back().seq);
     s->deliver(DEF_PROT_ROAM_MSG_RS, rs.SerializeAsString());
     log("[业务] 漫游历史 id=", userId, " peer=", peerId,
         " before_seq=", beforeSeq, " 返回=", rs.msgs_size(), " hasMore=", rs.has_more());

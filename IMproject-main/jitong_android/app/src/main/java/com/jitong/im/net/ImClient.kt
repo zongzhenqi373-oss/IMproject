@@ -53,6 +53,31 @@ class ImClient {
         /** 发送回执：peerId=接收方好友，result=CHAT_RESULT_SUCC(已送达)/FAIL(已转存离线)，seq=服务端分配的会话序列号 */
         data class ChatSendResult(val peerId: Int, val result: Int, val msgId: String, val seq: Long) : Event
 
+        /** 漫游消息条目（会话列表末条 / 历史分页共用）。图片 bytes 为空表示预览占位（不落消息表） */
+        data class RoamItem(
+            val fromId: Int,
+            val toId: Int,
+            val isImage: Boolean,
+            val text: String,
+            val bytes: ByteArray?,
+            val w: Int,
+            val h: Int,
+            val msgId: String,
+            val ts: Long,
+            val seq: Long,
+        )
+
+        /** 漫游会话列表结果：每会话最后一条（仅用于会话预览行，不落消息表） */
+        data class RoamConversations(val convs: List<RoamItem>) : Event
+
+        /** 漫游历史分页结果：hasMore/minSeq 供上拉翻页 */
+        data class RoamMessages(
+            val peerId: Int,
+            val msgs: List<RoamItem>,
+            val hasMore: Boolean,
+            val minSeq: Long,
+        ) : Event
+
         data class FriendOffline(val userId: Int) : Event
 
         /** 账号在别处登录，被服务端踢下线 */
@@ -149,6 +174,23 @@ class ImClient {
         send(Protocol.CHAT_INFO_RQ, rq.toByteArray())
     }
 
+    /** 漫游：登录后拉每会话最后一条（会话列表预览）。myid 占位，服务端以登录态为准 */
+    suspend fun roamConversations() {
+        val rq = Im.RoamConvRq.newBuilder().setMyid(myId).build()
+        send(Protocol.ROAM_CONV_RQ, rq.toByteArray())
+    }
+
+    /** 漫游：拉某会话比 beforeSeq 更早的 limit 条（首次传 Long.MAX 拉最新，上拉传已加载最小 seq） */
+    suspend fun roamMessages(peerId: Int, beforeSeq: Long, limit: Int) {
+        val rq = Im.RoamMsgRq.newBuilder()
+            .setMyid(myId)
+            .setPeerId(peerId)
+            .setBeforeSeq(beforeSeq)
+            .setLimit(limit)
+            .build()
+        send(Protocol.ROAM_MSG_RQ, rq.toByteArray())
+    }
+
     /** 主动下线：通知服务端（其会广播好友）后关闭连接 */
     suspend fun logout() {
         if (connected && myId > 0) {
@@ -167,6 +209,18 @@ class ImClient {
     }
 
     // ---------------- 内部实现 ----------------
+
+    /** pb ChatInfoRq → RoamItem。ts 秒转毫秒，图片字节为空表示预览占位 */
+    private fun Im.ChatInfoRq.toRoamItem(): Event.RoamItem {
+        val isImage = type == Im.MsgType.IMAGE
+        val bytes = if (isImage && imageData.size() > 0) imageData.toByteArray() else null
+        val tsMs = if (ts > 0) ts * 1000L else System.currentTimeMillis()
+        return Event.RoamItem(
+            fromId = myid, toId = friid, isImage = isImage,
+            text = msg, bytes = bytes, w = imageWidth, h = imageHeight,
+            msgId = msgId, ts = tsMs, seq = seq,
+        )
+    }
 
     private suspend fun readLoop(s: Socket) {
         try {
@@ -227,6 +281,20 @@ class ImClient {
                 val rs = Im.ChatInfoRs.parseFrom(f.payload)
                 // 回执里 myid=接收方好友，friid=自己
                 _events.emit(Event.ChatSendResult(rs.myid, rs.result, rs.msgId, rs.seq))
+            }
+
+            Protocol.ROAM_CONV_RS -> {
+                val rs = Im.RoamConvRs.parseFrom(f.payload)
+                _events.emit(Event.RoamConversations(rs.convsList.map { it.toRoamItem() }))
+            }
+
+            Protocol.ROAM_MSG_RS -> {
+                val rs = Im.RoamMsgRs.parseFrom(f.payload)
+                _events.emit(
+                    Event.RoamMessages(
+                        rs.peerId, rs.msgsList.map { it.toRoamItem() }, rs.hasMore, rs.minSeq,
+                    )
+                )
             }
 
             Protocol.FRIEND_OFFLINE ->

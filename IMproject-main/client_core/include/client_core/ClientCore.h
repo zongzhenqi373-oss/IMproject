@@ -13,6 +13,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 #include "Protocol.h"
 #include "Types.h"
 
@@ -63,6 +64,16 @@ public:
 
     // 与服务端连接断开（对端关闭/网络异常/本地 close）
     virtual void onConnectionClosed() = 0;
+
+    // ---------------- 消息漫游（M6，默认空实现，UI 按需覆盖） ----------------
+    // 会话列表漫游结果：每会话最后一条（图片条目 imageBytes 为空，仅预览用）
+    virtual void onRoamConversations(const std::vector<RoamMessage>& convs) { (void)convs; }
+    // 会话历史分页结果：msgs 为本批（服务端 seq 倒序），hasMore/minSeq 供上拉翻页
+    virtual void onRoamMessages(int peerId, const std::vector<RoamMessage>& msgs,
+                                bool hasMore, std::int64_t minSeq)
+    {
+        (void)peerId; (void)msgs; (void)hasMore; (void)minSeq;
+    }
 };
 
 class ClientCore {
@@ -103,6 +114,12 @@ public:
     // 通知服务端自己下线（下线后由调用方决定何时 disconnect）
     void sendOfflineNotify();
 
+    // ---------------- 消息漫游（M6） ----------------
+    // 登录后拉每会话最后一条（会话列表预览）
+    void sendRoamConvRq();
+    // 拉某会话比 beforeSeq 更早的 limit 条（首次传极大值拉最新，上拉传当前已加载最小 seq）
+    void sendRoamMsgRq(int peerId, std::int64_t beforeSeq, int limit);
+
     // ---------------- 会话状态 ----------------
     int myId() const;
     std::string myNick() const;
@@ -129,6 +146,9 @@ private:
     void onKickedOfflinePkt(const char* data, std::size_t len);
     // 心跳回复：无需处理（任何入站包都会刷新活跃时间），注册避免"未注册类型"日志
     void onHeartbeatRs(const char* data, std::size_t len);
+    // 漫游响应
+    void onRoamConvRs(const char* data, std::size_t len);
+    void onRoamMsgRs(const char* data, std::size_t len);
 
     // ---------------- 心跳保活 ----------------
     void startHeartbeat();

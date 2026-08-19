@@ -60,7 +60,7 @@ fun FriendListScreen(vm: MainViewModel) {
             TopAppBar(
                 title = { Text("即通") },
                 actions = {
-                    TextButton(onClick = { vm.logout() }) { Text("下线") }
+                    TextButton(onClick = { vm.logout() }) { Text("退出登录") }
                 },
             )
         },

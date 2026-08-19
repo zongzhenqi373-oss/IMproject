@@ -30,6 +30,7 @@ data class MessageEntity(
     val imgW: Int = 0,
     val imgH: Int = 0,
     val ts: Long,
+    val seq: Long = 0,            // 会话级序列号（服务端分配），聊天排序主键
     val status: Int,              // 0发送中 1已送达 2已接收 3离线转存
 )
 

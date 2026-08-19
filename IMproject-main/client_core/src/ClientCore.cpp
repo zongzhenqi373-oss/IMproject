@@ -104,6 +104,8 @@ void ClientCore::initFunArr()
     m_dealFunArr[DEF_PROT_FRIEND_OFFLINE - DEF_BASE] = &ClientCore::onFriendOfflinePkt;
     m_dealFunArr[DEF_PROT_HEARTBEAT_RS   - DEF_BASE] = &ClientCore::onHeartbeatRs;
     m_dealFunArr[DEF_PROT_KICKED_OFFLINE - DEF_BASE] = &ClientCore::onKickedOfflinePkt;
+    m_dealFunArr[DEF_PROT_ROAM_CONV_RS   - DEF_BASE] = &ClientCore::onRoamConvRs;
+    m_dealFunArr[DEF_PROT_ROAM_MSG_RS    - DEF_BASE] = &ClientCore::onRoamMsgRs;
 }
 
 void ClientCore::dispatchPacket(const char* data, std::size_t len)
@@ -213,6 +215,23 @@ void ClientCore::sendOfflineNotify()
     im::proto::FriendOffline pkt;
     pkt.set_offlineid(m_myId);
     sendPacket(DEF_PROT_FRIEND_OFFLINE, pkt.SerializeAsString());
+}
+
+void ClientCore::sendRoamConvRq()
+{
+    im::proto::RoamConvRq rq;
+    rq.set_myid(m_myId); // 占位，服务端以 session 登录态为准
+    sendPacket(DEF_PROT_ROAM_CONV_RQ, rq.SerializeAsString());
+}
+
+void ClientCore::sendRoamMsgRq(int peerId, std::int64_t beforeSeq, int limit)
+{
+    im::proto::RoamMsgRq rq;
+    rq.set_myid(m_myId);
+    rq.set_peer_id(peerId);
+    rq.set_before_seq(beforeSeq);
+    rq.set_limit(limit);
+    sendPacket(DEF_PROT_ROAM_MSG_RQ, rq.SerializeAsString());
 }
 
 // ---------------- 心跳保活 ----------------
@@ -370,6 +389,45 @@ void ClientCore::onFriendOfflinePkt(const char* data, std::size_t len)
     im::proto::FriendOffline pkt;
     if (!parsePayload(data, len, pkt)) return;
     if (auto* ev = m_events.load()) ev->onFriendOffline(pkt.offlineid());
+}
+
+// 把 pb ChatInfoRq 转成对外 RoamMessage 条目（漫游会话列表/历史分页共用）
+static RoamMessage toRoamMessage(const im::proto::ChatInfoRq& c)
+{
+    RoamMessage rm;
+    rm.fromId = c.myid();
+    rm.toId = c.friid();
+    rm.type = c.type() == im::proto::IMAGE ? 1 : 0;
+    rm.text = c.msg();
+    rm.imageBytes = c.image_data();
+    rm.imgW = c.image_width();
+    rm.imgH = c.image_height();
+    rm.msgId = c.msg_id();
+    rm.ts = c.ts();
+    rm.seq = c.seq();
+    return rm;
+}
+
+void ClientCore::onRoamConvRs(const char* data, std::size_t len)
+{
+    im::proto::RoamConvRs rs;
+    if (!parsePayload(data, len, rs)) return;
+    std::vector<RoamMessage> convs;
+    convs.reserve(rs.convs_size());
+    for (const auto& c : rs.convs()) convs.push_back(toRoamMessage(c));
+    if (auto* ev = m_events.load()) ev->onRoamConversations(convs);
+}
+
+void ClientCore::onRoamMsgRs(const char* data, std::size_t len)
+{
+    im::proto::RoamMsgRs rs;
+    if (!parsePayload(data, len, rs)) return;
+    std::vector<RoamMessage> msgs;
+    msgs.reserve(rs.msgs_size());
+    for (const auto& c : rs.msgs()) msgs.push_back(toRoamMessage(c));
+    if (auto* ev = m_events.load()) {
+        ev->onRoamMessages(rs.peer_id(), msgs, rs.has_more(), rs.min_seq());
+    }
 }
 
 } // namespace im

@@ -1,7 +1,9 @@
 package com.jitong.im.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Tab
@@ -34,8 +37,10 @@ fun LoginScreen(vm: MainViewModel) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
 
     var nick by rememberSaveable { mutableStateOf("") }
-    var tel by rememberSaveable { mutableStateOf("") }
-    var pass by rememberSaveable { mutableStateOf("") }
+    // 回填记住的账号密码（勾选“记住账号密码”后持久化在 MMKV）
+    var tel by rememberSaveable { mutableStateOf(com.jitong.im.data.Prefs.tel.orEmpty()) }
+    var pass by rememberSaveable { mutableStateOf(com.jitong.im.data.Prefs.pass.orEmpty()) }
+    var remember by rememberSaveable { mutableStateOf(com.jitong.im.data.Prefs.remember) }
 
     Column(
         modifier = Modifier
@@ -83,9 +88,22 @@ fun LoginScreen(vm: MainViewModel) {
         )
         Spacer(Modifier.height(20.dp))
 
+        if (tab == 0) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { remember = !remember },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = remember, onCheckedChange = { remember = it })
+                Text("记住账号密码")
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
         Button(
             onClick = {
-                if (tab == 0) vm.login(tel, pass) else vm.register(nick, tel, pass)
+                if (tab == 0) vm.login(tel, pass, remember) else vm.register(nick, tel, pass)
             },
             modifier = Modifier.fillMaxWidth(),
         ) {

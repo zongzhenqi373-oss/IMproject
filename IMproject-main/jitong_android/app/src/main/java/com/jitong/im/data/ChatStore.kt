@@ -26,25 +26,33 @@ class ChatStore(context: Context) {
         return lo * CONV_K + hi
     }
 
-    /** 消息落库（含 FTS 同事务双写 + 会话行刷新）。重复 msg_id 幂等忽略。 */
-    suspend fun save(ownerId: Int, m: ChatMessage, incrUnread: Boolean) = withContext(Dispatchers.IO) {
-        var mediaPath: String? = null
-        if (m.kind == MsgKind.IMAGE && m.imageBytes != null) {
-            mediaPath = writeImageFile(m.msgId, m.imageBytes)
+    /** 消息落库（含 FTS 同事务双写 + 会话行刷新）。重复 msg_id 幂等忽略。
+     *  bumpConversation=false：只落消息，不刷新会话预览行（漫游历史是旧消息，避免把预览回退到更早） */
+    suspend fun save(ownerId: Int, m: ChatMessage, incrUnread: Boolean, bumpConversation: Boolean = true) =
+        withContext(Dispatchers.IO) {
+            var mediaPath: String? = null
+            if (m.kind == MsgKind.IMAGE && m.imageBytes != null) {
+                mediaPath = writeImageFile(m.msgId, m.imageBytes)
+            }
+            val inserted = db.messageDao().insertWithFts(m.toEntity(ownerId, mediaPath))
+            if (inserted && bumpConversation) {
+                val lastMsg = if (m.kind == MsgKind.IMAGE) "[图片]" else m.text
+                db.conversationDao().upsertOnMessage(
+                    conversationId(ownerId, m.peerId), ownerId, m.peerId,
+                    lastMsg, m.ts, incrUnread && !m.fromMe,
+                )
+            }
         }
-        val inserted = db.messageDao().insertWithFts(m.toEntity(ownerId, mediaPath))
-        if (inserted) {
-            val lastMsg = if (m.kind == MsgKind.IMAGE) "[图片]" else m.text
-            db.conversationDao().upsertOnMessage(
-                conversationId(ownerId, m.peerId), ownerId, m.peerId,
-                lastMsg, m.ts, incrUnread && !m.fromMe,
-            )
-        }
-    }
 
     suspend fun updateStatus(ownerId: Int, msgId: String, status: ChatMessage.Status) =
         withContext(Dispatchers.IO) {
             db.messageDao().updateStatus(ownerId, msgId, status.toDb())
+        }
+
+    /** 回执带回服务端 seq 后，校正本端消息的会话序列号 */
+    suspend fun updateSeq(ownerId: Int, msgId: String, seq: Long) =
+        withContext(Dispatchers.IO) {
+            db.messageDao().updateSeq(ownerId, msgId, seq)
         }
 
     suspend fun clearUnread(ownerId: Int, peerId: Int) = withContext(Dispatchers.IO) {
@@ -90,7 +98,7 @@ class ChatStore(context: Context) {
             msgId = msgId, peerId = peerId, fromMe = fromMe,
             text = content.orEmpty(),
             kind = if (type == 1) MsgKind.IMAGE else MsgKind.TEXT,
-            imageBytes = bytes, imgW = imgW, imgH = imgH, ts = ts,
+            imageBytes = bytes, imgW = imgW, imgH = imgH, ts = ts, seq = seq,
             status = when (status) {
                 0 -> ChatMessage.Status.SENDING
                 1 -> ChatMessage.Status.DELIVERED
@@ -107,7 +115,7 @@ class ChatStore(context: Context) {
         type = if (kind == MsgKind.IMAGE) 1 else 0,
         content = if (kind == MsgKind.TEXT) text else null,
         mediaPath = mediaPath,
-        imgW = imgW, imgH = imgH, ts = ts,
+        imgW = imgW, imgH = imgH, ts = ts, seq = seq,
         status = status.toDb(),
     )
 

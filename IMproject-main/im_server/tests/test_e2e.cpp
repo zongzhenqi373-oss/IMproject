@@ -5,6 +5,7 @@
 #include <cassert>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <iostream>
@@ -48,6 +49,12 @@ struct RecordingEvents : IClientEvents {
     struct ImageMsg { int fromId; std::string bytes; int w; int h; std::string msgId; };
     std::vector<ImageMsg> images;
 
+    // 漫游收集
+    std::vector<RoamMessage> roamConvs;
+    bool gotRoamConvs = false;
+    struct RoamPage { int peerId; std::vector<RoamMessage> msgs; bool hasMore; std::int64_t minSeq; };
+    std::vector<RoamPage> roamPages;
+
     void notify() { cv.notify_all(); }
     void onRegisterResult(int r) override { std::lock_guard<std::mutex> l(mtx); registerResult = r; notify(); }
     void onLoginResult(int r, int uid) override { std::lock_guard<std::mutex> l(mtx); loginResult = r; loginUserId = uid; notify(); }
@@ -63,6 +70,12 @@ struct RecordingEvents : IClientEvents {
     void onFriendOffline(int uid) override { std::lock_guard<std::mutex> l(mtx); offlineEvents.push_back(uid); notify(); }
     void onKickedOffline(int reason) override { std::lock_guard<std::mutex> l(mtx); kicked = reason; notify(); }
     void onConnectionClosed() override { std::lock_guard<std::mutex> l(mtx); closed = true; notify(); }
+    void onRoamConversations(const std::vector<RoamMessage>& convs) override {
+        std::lock_guard<std::mutex> l(mtx); roamConvs = convs; gotRoamConvs = true; notify();
+    }
+    void onRoamMessages(int peerId, const std::vector<RoamMessage>& msgs, bool hasMore, std::int64_t minSeq) override {
+        std::lock_guard<std::mutex> l(mtx); roamPages.push_back({peerId, msgs, hasMore, minSeq}); notify();
+    }
 
     template <typename Pred>
     bool waitFor(Pred pred, int timeoutMs = 5000)
@@ -234,6 +247,65 @@ int main()
             if (cr.first == idB && cr.second == CHAT_RESULT_SUCC) ++succ;
         return succ >= 2;
     }));
+
+    // ============ M6：消息漫游（会话列表末条 + 历史分页游标 + 图片读盘） ============
+    // 至此 conv(A,B) 有 4 条：seq1 "你好李四"(文本)、seq2 "这是离线消息"(文本)、
+    //   seq3 imgBytes(图片)、seq4 imgBytes2(图片)。用 a2（张三 idA）视角漫游。
+
+    // 会话列表：拉回每会话末条；末条为图片，预览不应带字节（withImage=false）
+    a2.sendRoamConvRq();
+    assert(ea2.waitFor([&] { return ea2.gotRoamConvs; }));
+    {
+        bool foundConvB = false;
+        for (const auto& rm : ea2.roamConvs) {
+            if (rm.fromId == idB || rm.toId == idB) {
+                foundConvB = true;
+                assert(rm.type == 1);              // 末条是图片
+                assert(rm.imageBytes.empty());     // 预览不读盘、不带字节（修复 2）
+                assert(rm.seq == 4);               // 会话最后一条 seq
+            }
+        }
+        assert(foundConvB);
+    }
+
+    // 历史第一页：最新 2 条（seq4、seq3），均图片且带完整字节；hasMore=true，minSeq=3
+    a2.sendRoamMsgRq(idB, INT64_MAX, 2);
+    assert(ea2.waitFor([&] { return ea2.roamPages.size() >= 1; }));
+    std::int64_t page1Min = 0;
+    {
+        const auto& pg = ea2.roamPages[0];
+        assert(pg.peerId == idB);
+        assert(pg.msgs.size() == 2);
+        assert(pg.hasMore);                        // 满 limit 即认为还有更早的
+        // 服务端 seq 倒序返回
+        assert(pg.msgs[0].seq == 4 && pg.msgs[1].seq == 3);
+        assert(pg.msgs[0].type == 1 && !pg.msgs[0].imageBytes.empty()); // 图片读盘回传完整字节
+        assert(pg.msgs[1].type == 1 && !pg.msgs[1].imageBytes.empty());
+        assert(pg.minSeq == 3);
+        page1Min = pg.minSeq;
+    }
+
+    // 历史第二页（上拉）：游标 beforeSeq=3 → seq2、seq1 文本，无重叠；hasMore=true，minSeq=1
+    a2.sendRoamMsgRq(idB, page1Min, 2);
+    assert(ea2.waitFor([&] { return ea2.roamPages.size() >= 2; }));
+    std::int64_t page2Min = 0;
+    {
+        const auto& pg = ea2.roamPages[1];
+        assert(pg.msgs.size() == 2);
+        assert(pg.msgs[0].seq == 2 && pg.msgs[1].seq == 1);
+        assert(pg.msgs[0].text == "这是离线消息" && pg.msgs[1].text == "你好李四");
+        assert(pg.minSeq == 1);
+        page2Min = pg.minSeq;
+    }
+
+    // 历史到头：游标 beforeSeq=1 → 空批，hasMore=false
+    a2.sendRoamMsgRq(idB, page2Min, 2);
+    assert(ea2.waitFor([&] { return ea2.roamPages.size() >= 3; }));
+    {
+        const auto& pg = ea2.roamPages[2];
+        assert(pg.msgs.empty());
+        assert(!pg.hasMore);
+    }
 
     a2.disconnect();
     b3.disconnect();

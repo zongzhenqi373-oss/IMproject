@@ -70,6 +70,7 @@ message ChatInfoRs {
   int32 friid = 2;
   int32 result = 3; // proto::CHAT_RESULT_SUCC / CHAT_RESULT_FAIL
   string msg_id = 4; // 回执关联的发送消息 id
+  int64 seq = 5;     // 服务端为该消息分配的会话级 seq，发送方据此校正本地消息顺序
 }
 
 // ---------------- 添加好友 ----------------
@@ -91,4 +92,34 @@ message AddFriendRs {
 // C→S：告知自己下线；S→C：转发给在线好友
 message FriendOffline {
   int32 offlineid = 1;
+}
+
+// ---------------- 消息漫游（M6） ----------------
+// 换设备/重装后本地库空，登录后从服务端拉回历史。独立下行通道（QoS 隔离、避免队头阻塞），
+// 消息体复用 ChatInfoRq（同一张 messages 表、同一套 msg_id 去重、同一套会话 seq 排序）。
+
+// C→S：登录后拉每会话最后一条（会话列表预览）。myid 仅占位，服务端以 session 登录态为准。
+message RoamConvRq {
+  int32 myid = 1;
+}
+
+// S→C：会话列表预览。每条复用 ChatInfoRq；图片消息只填 type，不带 image_data（预览只需"[图片]"文字）
+message RoamConvRs {
+  repeated ChatInfoRq convs = 1;
+}
+
+// C→S：拉某会话比 before_seq 更早的 limit 条。首次传极大值(拉最新)，上拉传当前已加载最小 seq。
+message RoamMsgRq {
+  int32 myid = 1;       // 占位，服务端以 session 登录态为准
+  int32 peer_id = 2;    // 会话对端 id
+  int64 before_seq = 3; // 游标：seq < before_seq
+  int32 limit = 4;      // 本批数量 N
+}
+
+// S→C：会话历史分页。图片消息读盘回传完整字节（复用离线补发逻辑）。
+message RoamMsgRs {
+  int32 peer_id = 1;
+  repeated ChatInfoRq msgs = 2; // 服务端 seq 倒序返回；客户端落地后按 seq 升序
+  bool has_more = 3;            // 是否还有更早的（本批返回条数 == limit 即认为有）
+  int64 min_seq = 4;           // 本批最小 seq（下次上拉游标）
 }

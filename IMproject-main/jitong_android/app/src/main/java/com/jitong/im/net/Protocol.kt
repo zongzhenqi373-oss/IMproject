@@ -22,6 +22,10 @@ object Protocol {
     const val HEARTBEAT_RQ = DEF_BASE + 10
     const val HEARTBEAT_RS = DEF_BASE + 11
     const val KICKED_OFFLINE = DEF_BASE + 12
+    const val ROAM_CONV_RQ = DEF_BASE + 13
+    const val ROAM_CONV_RS = DEF_BASE + 14
+    const val ROAM_MSG_RQ = DEF_BASE + 15
+    const val ROAM_MSG_RS = DEF_BASE + 16
 
     /** 单包最大长度（含 4B 协议号），防恶意超大包 OOM */
     const val MAX_PACK_LEN = 10 * 1024 * 1024

@@ -106,10 +106,14 @@ bool Database::open(const std::string& dbPath, int poolSize)
         "  img_h INTEGER NOT NULL DEFAULT 0,"
         "  ts INTEGER NOT NULL,"
         "  is_delivered INTEGER NOT NULL DEFAULT 0,"
-        "  is_read INTEGER NOT NULL DEFAULT 0"
+        "  is_read INTEGER NOT NULL DEFAULT 0,"
+        "  seq INTEGER NOT NULL DEFAULT 0"
         ");"
         "CREATE INDEX IF NOT EXISTS idx_msg_conv_ts ON messages(conversation_id, ts);"
-        "CREATE INDEX IF NOT EXISTS idx_msg_recv ON messages(receiver_id, is_delivered, ts);");
+        "CREATE INDEX IF NOT EXISTS idx_msg_conv_seq ON messages(conversation_id, seq);"
+        "CREATE INDEX IF NOT EXISTS idx_msg_recv ON messages(receiver_id, is_delivered, ts);"
+        // 漫游会话列表（roamConversations）按 sender_id 分组取末条，需 sender_id 索引避免全表扫描
+        "CREATE INDEX IF NOT EXISTS idx_msg_sender ON messages(sender_id);");
 }
 
 void Database::seedIfEmpty()
@@ -301,20 +305,47 @@ int Database::getUserIdByNick(const std::string& nick)
     return id;
 }
 
-bool Database::saveMessage(const StoredMessage& m, bool delivered)
+bool Database::saveMessage(StoredMessage& m, bool delivered)
 {
     Conn& c = acquire();
     std::lock_guard<std::mutex> lock(c.mtx);
 
+    const std::int64_t convId = makeConversationId(m.senderId, m.receiverId);
+
+    // 幂等：若该 msg_id 已存在（漫游/重发），直接读回已有 seq，不再分配新号
+    {
+        sqlite3_stmt* q = nullptr;
+        sqlite3_prepare_v2(c.db, "SELECT seq FROM messages WHERE msg_id=?;", -1, &q, nullptr);
+        sqlite3_bind_text(q, 1, m.msgId.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(q) == SQLITE_ROW) {
+            m.seq = sqlite3_column_int64(q, 0);
+            sqlite3_finalize(q);
+            return true;
+        }
+        sqlite3_finalize(q);
+    }
+
+    // 会话级单调递增 seq：当前会话 MAX(seq)+1（同连接锁内串行，保证不重号）
+    std::int64_t nextSeq = 1;
+    {
+        sqlite3_stmt* q = nullptr;
+        sqlite3_prepare_v2(c.db,
+            "SELECT COALESCE(MAX(seq),0)+1 FROM messages WHERE conversation_id=?;", -1, &q, nullptr);
+        sqlite3_bind_int64(q, 1, convId);
+        if (sqlite3_step(q) == SQLITE_ROW) nextSeq = sqlite3_column_int64(q, 0);
+        sqlite3_finalize(q);
+    }
+    m.seq = nextSeq;
+
     sqlite3_stmt* st = nullptr;
-    // msg_id UNIQUE + INSERT OR IGNORE：漫游/重发幂等（对齐 QQNT 唯一约束防重）
+    // msg_id UNIQUE + INSERT OR IGNORE：漫游/重发幂等
     sqlite3_prepare_v2(c.db,
         "INSERT OR IGNORE INTO messages"
-        "(msg_id, conversation_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, is_delivered, is_read)"
-        " VALUES(?,?,?,?,?,?,?,?,?,?,?,0);",
+        "(msg_id, conversation_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, is_delivered, is_read, seq)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?);",
         -1, &st, nullptr);
     sqlite3_bind_text(st, 1, m.msgId.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(st, 2, makeConversationId(m.senderId, m.receiverId));
+    sqlite3_bind_int64(st, 2, convId);
     sqlite3_bind_int(st, 3, m.senderId);
     sqlite3_bind_int(st, 4, m.receiverId);
     sqlite3_bind_int(st, 5, m.type);
@@ -324,6 +355,7 @@ bool Database::saveMessage(const StoredMessage& m, bool delivered)
     sqlite3_bind_int(st, 9, m.imgH);
     sqlite3_bind_int64(st, 10, m.ts);
     sqlite3_bind_int(st, 11, delivered ? 1 : 0);
+    sqlite3_bind_int64(st, 12, m.seq);
     const bool ok = sqlite3_step(st) == SQLITE_DONE;
     sqlite3_finalize(st);
     return ok;
@@ -337,8 +369,8 @@ std::vector<StoredMessage> Database::pullUndelivered(int receiverId)
 
     sqlite3_stmt* st = nullptr;
     sqlite3_prepare_v2(c.db,
-        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts "
-        "FROM messages WHERE receiver_id=? AND is_delivered=0 ORDER BY ts ASC;",
+        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq "
+        "FROM messages WHERE receiver_id=? AND is_delivered=0 ORDER BY seq ASC;",
         -1, &st, nullptr);
     sqlite3_bind_int(st, 1, receiverId);
     while (sqlite3_step(st) == SQLITE_ROW) {
@@ -355,6 +387,7 @@ std::vector<StoredMessage> Database::pullUndelivered(int receiverId)
         m.imgW = sqlite3_column_int(st, 6);
         m.imgH = sqlite3_column_int(st, 7);
         m.ts = sqlite3_column_int64(st, 8);
+        m.seq = sqlite3_column_int64(st, 9);
         out.push_back(std::move(m));
     }
     sqlite3_finalize(st);
@@ -375,6 +408,75 @@ void Database::markDelivered(const std::vector<std::string>& msgIds)
         sqlite3_step(st);
     }
     sqlite3_finalize(st);
+}
+
+// 从结果集当前行装载一条 StoredMessage（列序须与 SELECT 一致：
+// msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq）
+static StoredMessage readMessageRow(sqlite3_stmt* st)
+{
+    StoredMessage m;
+    const unsigned char* msgId = sqlite3_column_text(st, 0);
+    m.msgId = msgId ? reinterpret_cast<const char*>(msgId) : "";
+    m.senderId = sqlite3_column_int(st, 1);
+    m.receiverId = sqlite3_column_int(st, 2);
+    m.type = sqlite3_column_int(st, 3);
+    const unsigned char* content = sqlite3_column_text(st, 4);
+    const unsigned char* path = sqlite3_column_text(st, 5);
+    m.content = content ? reinterpret_cast<const char*>(content) : "";
+    m.mediaPath = path ? reinterpret_cast<const char*>(path) : "";
+    m.imgW = sqlite3_column_int(st, 6);
+    m.imgH = sqlite3_column_int(st, 7);
+    m.ts = sqlite3_column_int64(st, 8);
+    m.seq = sqlite3_column_int64(st, 9);
+    return m;
+}
+
+std::vector<StoredMessage> Database::roamConversations(int userId)
+{
+    std::vector<StoredMessage> out;
+    Conn& c = acquire();
+    std::lock_guard<std::mutex> lock(c.mtx);
+
+    // 每会话末条：内层两个子查询各走 idx_msg_sender / idx_msg_recv 避免 OR 全表扫描，
+    // UNION ALL 合并后按 conversation_id 取全局 MAX(id)（同会话我发/我收各一末条时取更晚者）。
+    sqlite3_stmt* st = nullptr;
+    sqlite3_prepare_v2(c.db,
+        "SELECT m.msg_id, m.sender_id, m.receiver_id, m.type, m.content, m.media_path, "
+        "m.img_w, m.img_h, m.ts, m.seq FROM messages m JOIN ("
+        "  SELECT conversation_id, MAX(id) AS mid FROM ("
+        "    SELECT conversation_id, id FROM messages WHERE sender_id=?"
+        "    UNION ALL"
+        "    SELECT conversation_id, id FROM messages WHERE receiver_id=?"
+        "  ) GROUP BY conversation_id"
+        ") t ON m.id = t.mid ORDER BY m.ts DESC;",
+        -1, &st, nullptr);
+    sqlite3_bind_int(st, 1, userId);
+    sqlite3_bind_int(st, 2, userId);
+    while (sqlite3_step(st) == SQLITE_ROW) out.push_back(readMessageRow(st));
+    sqlite3_finalize(st);
+    return out;
+}
+
+std::vector<StoredMessage> Database::roamMessages(int userId, int peerId, std::int64_t beforeSeq, int limit)
+{
+    std::vector<StoredMessage> out;
+    Conn& c = acquire();
+    std::lock_guard<std::mutex> lock(c.mtx);
+
+    const std::int64_t convId = makeConversationId(userId, peerId);
+
+    // 会话内比游标更早的 N 条（seq 倒序），走 idx_msg_conv_seq
+    sqlite3_stmt* st = nullptr;
+    sqlite3_prepare_v2(c.db,
+        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq "
+        "FROM messages WHERE conversation_id=? AND seq < ? ORDER BY seq DESC LIMIT ?;",
+        -1, &st, nullptr);
+    sqlite3_bind_int64(st, 1, convId);
+    sqlite3_bind_int64(st, 2, beforeSeq);
+    sqlite3_bind_int(st, 3, limit);
+    while (sqlite3_step(st) == SQLITE_ROW) out.push_back(readMessageRow(st));
+    sqlite3_finalize(st);
+    return out;
 }
 
 } // namespace imsrv

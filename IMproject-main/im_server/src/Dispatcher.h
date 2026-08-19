@@ -29,6 +29,8 @@ private:
     void onHeartbeatRq(const std::shared_ptr<Session>& s, const std::string& payload);
     void onAddFriendRq(const std::shared_ptr<Session>& s, const std::string& payload);
     void onAddFriendRs(const std::shared_ptr<Session>& s, const std::string& payload);
+    void onRoamConvRq(const std::shared_ptr<Session>& s, const std::string& payload);
+    void onRoamMsgRq(const std::shared_ptr<Session>& s, const std::string& payload);
 
     // 工具：下发一条 FriendInfo（在线状态由 Presence 决定）
     void sendFriendInfo(const std::shared_ptr<Session>& to, int userId, int onlineStatus);

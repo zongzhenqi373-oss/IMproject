@@ -27,7 +27,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             JitongTheme {
                 val vm: MainViewModel = viewModel()
-                vm.attachStore(ChatStore(applicationContext))
+                val appContext = applicationContext
+                // 仅首次组合调用一次，避免每次重组重复触发（attachStore 内部亦有幂等保护）
+                LaunchedEffect(Unit) {
+                    vm.attachStore(ChatStore(appContext))
+                }
                 AppNav(vm)
             }
         }

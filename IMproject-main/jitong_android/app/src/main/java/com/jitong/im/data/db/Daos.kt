@@ -27,11 +27,14 @@ interface MessageDao {
         return true
     }
 
-    @Query("SELECT * FROM messages WHERE ownerId = :ownerId ORDER BY ts, id")
+    @Query("SELECT * FROM messages WHERE ownerId = :ownerId ORDER BY CASE WHEN seq > 0 THEN seq ELSE 9223372036854775807 END, ts, id")
     suspend fun allForOwner(ownerId: Int): List<MessageEntity>
 
     @Query("UPDATE messages SET status = :status WHERE ownerId = :ownerId AND msgId = :msgId")
     suspend fun updateStatus(ownerId: Int, msgId: String, status: Int)
+
+    @Query("UPDATE messages SET seq = :seq WHERE ownerId = :ownerId AND msgId = :msgId")
+    suspend fun updateSeq(ownerId: Int, msgId: String, seq: Long)
 
     /** FTS 前缀匹配（simple 分词：英文按词、中文整串前缀） */
     @Query(

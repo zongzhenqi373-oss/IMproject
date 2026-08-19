@@ -40,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jitong.im.util.ImageCodec
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,8 +65,16 @@ fun ChatScreen(vm: MainViewModel) {
     val conv = allMessages[p.id].orEmpty()
 
     val listState = rememberLazyListState()
-    LaunchedEffect(conv.size) {
+    // 仅当"最新一条"变化（新消息到底部）时才滚到底；上拉加载更早消息不改变末条 id，不触发滚动，
+    // 避免把用户从顶部拽回底部（对齐漫游设计决策 7：简单版不做滚动锚点，允许轻微跳动）
+    LaunchedEffect(conv.lastOrNull()?.msgId) {
         if (conv.isNotEmpty()) listState.animateScrollToItem(conv.size - 1)
+    }
+    // 滚到顶部触发上拉加载更早历史（VM 内部按 hasMore/loading/游标防抖）
+    LaunchedEffect(listState, p.id) {
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .distinctUntilChanged()
+            .collect { idx -> if (idx == 0 && conv.isNotEmpty()) vm.loadMoreHistory(p.id) }
     }
 
     var input by rememberSaveable { mutableStateOf("") }

@@ -42,6 +42,10 @@ constexpr protType DEF_PROT_FRIEND_OFFLINE = DEF_BASE + 9; // 下线通知
 constexpr protType DEF_PROT_HEARTBEAT_RQ   = DEF_BASE + 10; // 心跳请求（C→S，空 payload）
 constexpr protType DEF_PROT_HEARTBEAT_RS   = DEF_BASE + 11; // 心跳回复（S→C，空 payload）
 constexpr protType DEF_PROT_KICKED_OFFLINE = DEF_BASE + 12; // 被踢下线通知（S→C，空 payload）
+constexpr protType DEF_PROT_ROAM_CONV_RQ   = DEF_BASE + 13; // 会话列表漫游请求（C→S，登录后每会话末条）
+constexpr protType DEF_PROT_ROAM_CONV_RS   = DEF_BASE + 14; // 会话列表漫游响应（S→C）
+constexpr protType DEF_PROT_ROAM_MSG_RQ    = DEF_BASE + 15; // 会话历史分页请求（C→S）
+constexpr protType DEF_PROT_ROAM_MSG_RS    = DEF_BASE + 16; // 会话历史分页响应（S→C）
 
 // ---------------- 字段软上限（字节，UTF-8） ----------------
 // 与原定长 struct 语义一致；pb 字符串不再定长，由应用层截断保护

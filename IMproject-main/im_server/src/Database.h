@@ -43,6 +43,7 @@ struct StoredMessage {
     int imgW = 0;
     int imgH = 0;
     std::int64_t ts = 0;
+    std::int64_t seq = 0;   // 会话级单调递增序列号（服务端分配，接收方据此排序）
 };
 
 class Database {
@@ -75,12 +76,19 @@ public:
     int getUserIdByNick(const std::string& nick);
 
     // ---------------- 消息（漫游/离线单表） ----------------
-    // 保存消息；conversation_id 由收发双方 id 生成（min*K+max，双向同值）
-    bool saveMessage(const StoredMessage& m, bool delivered);
+    // 保存消息；conversation_id 由收发双方 id 生成（min*K+max，双向同值）。
+    // 服务端按会话分配单调递增 seq 并回填到 m.seq。
+    bool saveMessage(StoredMessage& m, bool delivered);
 
     // 拉取未投递消息（按时间升序），并可标记为已投递
     std::vector<StoredMessage> pullUndelivered(int receiverId);
     void markDelivered(const std::vector<std::string>& msgIds);
+
+    // ---------------- 消息漫游（M6） ----------------
+    // 该用户每个会话的最后一条（会话列表预览，按 ts 倒序）
+    std::vector<StoredMessage> roamConversations(int userId);
+    // 某会话（userId↔peerId）比 beforeSeq 更早的 limit 条（seq 倒序）
+    std::vector<StoredMessage> roamMessages(int userId, int peerId, std::int64_t beforeSeq, int limit);
 
 private:
     struct Conn {
