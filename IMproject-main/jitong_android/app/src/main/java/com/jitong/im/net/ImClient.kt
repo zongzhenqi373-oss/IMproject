@@ -36,20 +36,22 @@ class ImClient {
             val online: Boolean,
         ) : Event
 
-        /** 收到文本消息（在线转发或离线补发） */
-        data class ChatReceived(val fromId: Int, val text: String, val msgId: String) : Event
+        /** 收到文本消息（在线转发或离线补发），ts 为毫秒（服务端权威时间换算），seq 为会话级序列号 */
+        data class ChatReceived(val fromId: Int, val text: String, val msgId: String, val ts: Long, val seq: Long) : Event
 
-        /** 收到图片消息（在线转发或离线补发），字节为原始图片数据 */
+        /** 收到图片消息（在线转发或离线补发），字节为原始图片数据，ts 为毫秒，seq 为会话级序列号 */
         data class ImageReceived(
             val fromId: Int,
             val bytes: ByteArray,
             val w: Int,
             val h: Int,
             val msgId: String,
+            val ts: Long,
+            val seq: Long,
         ) : Event
 
-        /** 发送回执：peerId=接收方好友，result=CHAT_RESULT_SUCC(已送达)/FAIL(已转存离线) */
-        data class ChatSendResult(val peerId: Int, val result: Int, val msgId: String) : Event
+        /** 发送回执：peerId=接收方好友，result=CHAT_RESULT_SUCC(已送达)/FAIL(已转存离线)，seq=服务端分配的会话序列号 */
+        data class ChatSendResult(val peerId: Int, val result: Int, val msgId: String, val seq: Long) : Event
 
         data class FriendOffline(val userId: Int) : Event
 
@@ -204,14 +206,17 @@ class ImClient {
 
             Protocol.CHAT_INFO_RQ -> {
                 val rq = Im.ChatInfoRq.parseFrom(f.payload)
+                // 服务端 ts 为秒级权威时间；换算成毫秒统一口径，0 则兜底本地时间（兼容老服务端）
+                val tsMs = if (rq.ts > 0) rq.ts * 1000L else System.currentTimeMillis()
+                android.util.Log.d("IMDBG", "dispatch CHAT_INFO_RQ from=${rq.myid} type=${rq.type} msgId=${rq.msgId} ts=${rq.ts} seq=${rq.seq} msg=${rq.msg}")
                 when (rq.type) {
                     Im.MsgType.TEXT ->
-                        _events.emit(Event.ChatReceived(rq.myid, rq.msg, rq.msgId))
+                        _events.emit(Event.ChatReceived(rq.myid, rq.msg, rq.msgId, tsMs, rq.seq))
                     Im.MsgType.IMAGE ->
                         _events.emit(
                             Event.ImageReceived(
                                 rq.myid, rq.imageData.toByteArray(),
-                                rq.imageWidth, rq.imageHeight, rq.msgId,
+                                rq.imageWidth, rq.imageHeight, rq.msgId, tsMs, rq.seq,
                             )
                         )
                     else -> Unit // FILE 属 M7
@@ -221,7 +226,7 @@ class ImClient {
             Protocol.CHAT_INFO_RS -> {
                 val rs = Im.ChatInfoRs.parseFrom(f.payload)
                 // 回执里 myid=接收方好友，friid=自己
-                _events.emit(Event.ChatSendResult(rs.myid, rs.result, rs.msgId))
+                _events.emit(Event.ChatSendResult(rs.myid, rs.result, rs.msgId, rs.seq))
             }
 
             Protocol.FRIEND_OFFLINE ->

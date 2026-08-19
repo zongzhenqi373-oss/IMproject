@@ -60,6 +60,8 @@ message ChatInfoRq {
   int32 image_width = 6;
   int32 image_height = 7;
   string msg_id = 8;        // 客户端生成 UUID，漫游/去重/回执关联用
+  int64 ts = 9;             // 消息发送时间（秒，服务端权威时钟）。在线转发/离线补发均带回，接收方据此排序，避免用"收到时刻"导致时序错乱
+  int64 seq = 10;           // 会话级单调递增序列号（服务端按 conversation 分配）。接收方按 seq 排序，保证 C2C 严格顺序、可做空洞检测
 }
 
 // S→C：发送结果回执（myid=接收方朋友, friid=自己）

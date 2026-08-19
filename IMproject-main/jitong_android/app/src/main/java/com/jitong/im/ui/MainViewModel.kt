@@ -324,7 +324,8 @@ class MainViewModel : ViewModel() {
     private fun append(msg: ChatMessage, incrUnread: Boolean) {
         val conv = _messages.value[msg.peerId].orEmpty()
         if (conv.any { it.msgId == msg.msgId }) return
-        _messages.value = _messages.value + (msg.peerId to conv + msg)
+        // 按会话 seq 插入并保持有序（补发/乱序到达时也能排到正确位置）
+        _messages.value = _messages.value + (msg.peerId to sortBySeq(conv + msg))
 
         // 会话行内存即时刷新
         val lastMsg = if (msg.kind == MsgKind.IMAGE) "[图片]" else msg.text
