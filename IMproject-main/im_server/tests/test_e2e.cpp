@@ -375,6 +375,20 @@ int main()
     a2.sendFileComplete(fmsgId2, fmsgId2);
     assert(ea2.waitFor([&] { return ea2.lastProgressStatus == FILE_ST_DONE; }));
 
+    // 下载：b3(李四) 从 file-e2e-0001 的第 0 块开始拉，应收到 2 块，拼接 == fileBytes
+    eb3.downloadChunks.clear();
+    b3.sendFileDownload(fmsgId, 0);
+    assert(eb3.waitFor([&] {
+        int bytes = 0; for (auto& c : eb3.downloadChunks) bytes += (int)c.second.size();
+        return bytes == (int)fileBytes.size();
+    }));
+    // 断点续传下载：从第 1 块拉，只应收到第 1 块（44KB）
+    eb3.downloadChunks.clear();
+    b3.sendFileDownload(fmsgId, 1);
+    assert(eb3.waitFor([&] {
+        return eb3.downloadChunks.size() == 1 && eb3.downloadChunks[0].first == 1;
+    }));
+
     a2.disconnect();
     b3.disconnect();
     server.stop();

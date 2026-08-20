@@ -557,8 +557,39 @@ void Dispatcher::onFileCompleteRq(const std::shared_ptr<Session>& s, const std::
 
 void Dispatcher::onFileDownloadRq(const std::shared_ptr<Session>& s, const std::string& payload)
 {
-    // 下载实现见 Task 6（本任务仅注册占位，避免未注册协议号日志）。
-    (void)s; (void)payload;
+    if (s->userId() <= 0) return;
+    FileDownloadRq rq;
+    if (!parsePayload(payload, rq)) return;
+
+    StoredMessage m;
+    if (!m_server.db().getMessageByMsgId(rq.file_id(), m) || m.type != 2 || m.mediaPath.empty()) {
+        FileProgressRs pr; pr.set_file_id(rq.file_id()); pr.set_status(FILE_ST_FAILED);
+        s->deliver(DEF_PROT_FILE_PROGRESS_RS, pr.SerializeAsString());
+        return;
+    }
+    std::ifstream ifs(m.mediaPath, std::ios::binary);
+    if (!ifs) {
+        FileProgressRs pr; pr.set_file_id(rq.file_id()); pr.set_status(FILE_ST_FAILED);
+        s->deliver(DEF_PROT_FILE_PROGRESS_RS, pr.SerializeAsString());
+        return;
+    }
+    const int total = (int)((m.fileSize + (std::int64_t)FILE_CHUNK_SIZE - 1) / (std::int64_t)FILE_CHUNK_SIZE);
+    int idx = rq.from_chunk() < 0 ? 0 : rq.from_chunk();
+    ifs.seekg((std::streamoff)idx * (std::streamoff)FILE_CHUNK_SIZE, std::ios::beg);
+    std::vector<char> buf(FILE_CHUNK_SIZE);
+    for (; idx < total; ++idx) {
+        ifs.read(buf.data(), (std::streamsize)FILE_CHUNK_SIZE);
+        std::streamsize got = ifs.gcount();
+        if (got <= 0) break;
+        FileChunkRq ch;
+        ch.set_file_id(rq.file_id());
+        ch.set_chunk_index(idx);
+        ch.set_data(std::string(buf.data(), (size_t)got));
+        s->deliver(DEF_PROT_FILE_CHUNK_RQ, ch.SerializeAsString());
+    }
+    FileProgressRs pr; pr.set_file_id(rq.file_id());
+    pr.set_status(FILE_ST_DONE); pr.set_total_chunks(total); pr.set_received_chunks(total);
+    s->deliver(DEF_PROT_FILE_PROGRESS_RS, pr.SerializeAsString());
 }
 
 } // namespace imsrv
