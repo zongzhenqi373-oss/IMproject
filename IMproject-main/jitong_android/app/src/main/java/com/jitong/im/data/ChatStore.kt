@@ -35,6 +35,9 @@ class ChatStore(context: Context) {
                 mediaPath = writeImageFile(m.msgId, m.imageBytes)
             }
             val inserted = db.messageDao().insertWithFts(m.toEntity(ownerId, mediaPath))
+            if (!inserted && m.kind == MsgKind.FILE && !m.fromMe) {
+                reconcileIncomingFile(ownerId, m)
+            }
             if (inserted && bumpConversation) {
                 val lastMsg = when (m.kind) {
                     MsgKind.IMAGE -> "[图片]"
@@ -59,9 +62,24 @@ class ChatStore(context: Context) {
             db.messageDao().updateSeq(ownerId, msgId, seq)
         }
 
+    /** 用服务端补发卡片修正本地同 msgId 的遗留文件记录。 */
+    suspend fun reconcileIncomingFile(ownerId: Int, m: ChatMessage) =
+        withContext(Dispatchers.IO) {
+            db.messageDao().reconcileIncomingFile(
+                ownerId, m.msgId, m.fileId, m.fileName, m.fileSize, m.ts, m.seq,
+            )
+        }
+
     /** 文件下载完成后写入最终本地路径 */
     suspend fun updateFileLocalPath(ownerId: Int, fileId: String, path: String) =
         withContext(Dispatchers.IO) { db.messageDao().updateLocalPath(ownerId, fileId, path) }
+
+    suspend fun repairFileId(ownerId: Int, msgId: String, fileId: String) =
+        withContext(Dispatchers.IO) { db.messageDao().repairFileId(ownerId, msgId, fileId) }
+
+    /** SAF 的 SIZE 元数据可能不准确；复制后以本地文件实际长度回写发送卡片。 */
+    suspend fun updateOutgoingFile(ownerId: Int, msgId: String, path: String, size: Long) =
+        withContext(Dispatchers.IO) { db.messageDao().updateOutgoingFile(ownerId, msgId, path, size) }
 
     suspend fun clearUnread(ownerId: Int, peerId: Int) = withContext(Dispatchers.IO) {
         db.conversationDao().clearUnread(conversationId(ownerId, peerId))
@@ -70,6 +88,8 @@ class ChatStore(context: Context) {
     /** 登录后装载：历史消息（含图片字节读回）+ 会话行 */
     suspend fun hydrate(ownerId: Int): Pair<Map<Int, List<ChatMessage>>, Map<Int, ConversationEntity>> =
         withContext(Dispatchers.IO) {
+            // 下载任务只存在于当前进程内；重登/重启后遗留的接收方 SENDING 不可能仍在运行。
+            db.messageDao().recoverInterruptedFileDownloads(ownerId)
             val messages = db.messageDao().allForOwner(ownerId)
                 .map { it.toChatMessage() }
                 .groupBy { it.peerId }

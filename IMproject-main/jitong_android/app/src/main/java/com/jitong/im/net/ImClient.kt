@@ -53,11 +53,13 @@ class ImClient {
         /** 发送回执：peerId=接收方好友，result=CHAT_RESULT_SUCC(已送达)/FAIL(已转存离线)，seq=服务端分配的会话序列号 */
         data class ChatSendResult(val peerId: Int, val result: Int, val msgId: String, val seq: Long) : Event
 
-        /** 漫游消息条目（会话列表末条 / 历史分页共用）。图片 bytes 为空表示预览占位（不落消息表） */
+        /** 漫游消息条目（会话列表末条 / 历史分页共用）。图片 bytes 为空表示预览占位（不落消息表）。 */
         data class RoamItem(
             val fromId: Int,
             val toId: Int,
+            val isText: Boolean,
             val isImage: Boolean,
+            val isFile: Boolean,
             val text: String,
             val bytes: ByteArray?,
             val w: Int,
@@ -65,6 +67,9 @@ class ImClient {
             val msgId: String,
             val ts: Long,
             val seq: Long,
+            val fileId: String,
+            val fileName: String,
+            val fileSize: Long,
         )
 
         /** 漫游会话列表结果：每会话最后一条（仅用于会话预览行，不落消息表） */
@@ -245,13 +250,16 @@ class ImClient {
 
     /** pb ChatInfoRq → RoamItem。ts 秒转毫秒，图片字节为空表示预览占位 */
     private fun Im.ChatInfoRq.toRoamItem(): Event.RoamItem {
+        val isText = type == Im.MsgType.TEXT
         val isImage = type == Im.MsgType.IMAGE
+        val isFile = type == Im.MsgType.FILE
         val bytes = if (isImage && imageData.size() > 0) imageData.toByteArray() else null
         val tsMs = if (ts > 0) ts * 1000L else System.currentTimeMillis()
         return Event.RoamItem(
-            fromId = myid, toId = friid, isImage = isImage,
+            fromId = myid, toId = friid, isText = isText, isImage = isImage, isFile = isFile,
             text = msg, bytes = bytes, w = imageWidth, h = imageHeight,
             msgId = msgId, ts = tsMs, seq = seq,
+            fileId = fileId, fileName = fileName, fileSize = fileSize,
         )
     }
 

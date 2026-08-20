@@ -24,7 +24,7 @@ data class MessageEntity(
     val conversationId: Long,
     val peerId: Int,
     val fromMe: Boolean,
-    val type: Int,                // 0=TEXT 1=IMAGE
+    val type: Int,                // 0=TEXT 1=IMAGE 2=FIFE
     val content: String? = null,  // TEXT 正文
     val mediaPath: String? = null, // IMAGE 本地文件路径（字节落文件，库里只存路径）
     val imgW: Int = 0,
