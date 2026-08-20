@@ -99,6 +99,13 @@ fun ChatScreen(vm: MainViewModel) {
         }
     }
 
+    // SAF 选文件（任意 MIME），交给 vm.sendFile 走上传状态机
+    val pickFile = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) vm.sendFile(uri, context.contentResolver)
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -138,7 +145,7 @@ fun ChatScreen(vm: MainViewModel) {
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(conv, key = { it.msgId }) { msg ->
-                    MessageRow(msg, peerNick = p.nick, myNick = vm.myNick.collectAsStateWithLifecycle().value, myId = vm.myId)
+                    MessageRow(msg, peerNick = p.nick, myNick = vm.myNick.collectAsStateWithLifecycle().value, myId = vm.myId, vm = vm)
                 }
             }
 
@@ -196,7 +203,7 @@ fun ChatScreen(vm: MainViewModel) {
                     }
                     PanelItem("文件") {
                         showPanel = false
-                        vm.notify("文件传输将在 M7 版本开放")
+                        pickFile.launch(arrayOf("*/*"))
                     }
                 }
             }
@@ -224,7 +231,8 @@ private fun PanelItem(label: String, onClick: () -> Unit) {
 
 /** 一条消息：头像 + 气泡（自己靠右绿色，对方靠左白色） */
 @Composable
-private fun MessageRow(msg: ChatMessage, peerNick: String, myNick: String, myId: Int) {
+private fun MessageRow(msg: ChatMessage, peerNick: String, myNick: String, myId: Int, vm: MainViewModel) {
+    val context = LocalContext.current
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = if (msg.fromMe) Arrangement.End else Arrangement.Start,
@@ -250,16 +258,10 @@ private fun MessageRow(msg: ChatMessage, peerNick: String, myNick: String, myId:
 
                 MsgKind.IMAGE -> ImageBubble(msg)
 
-                // 文件消息气泡：完整 UI（进度/下载）留给 Task 13，此处先占位展示文件名，保证可编译可用
-                MsgKind.FILE -> Box(
-                    Modifier
-                        .widthIn(max = 260.dp)
-                        .background(
-                            if (msg.fromMe) Color(0xFF95EC69) else Color.White,
-                            RoundedCornerShape(8.dp),
-                        )
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                ) { Text("[文件] ${msg.fileName}") }
+                // 文件消息气泡：图标 + 名称 + 大小 + 进度/下载/打开
+                MsgKind.FILE -> FileBubble(msg, onDownload = { vm.downloadFile(msg) }, onOpen = {
+                    msg.localPath?.let { openFile(context, it, msg.fileName) }
+                })
             }
             if (msg.fromMe) {
                 Text(
@@ -279,6 +281,58 @@ private fun MessageRow(msg: ChatMessage, peerNick: String, myNick: String, myId:
             Avatar(id = myId, nick = myNick, size = 40.dp)
         }
     }
+}
+
+/**
+ * 文件消息气泡：图标+文件名+大小+进度/操作提示。
+ *
+ * 下载防重入：downloadFile 内部对 .part 文件用追加流写入，无二次点击去重逻辑，
+ * 因此这里在 UI 层做守卫——仅当"未下载 且 非下载中（status != SENDING）"时才允许触发 onDownload，
+ * 下载中（对方视角复用 SENDING 表示"进行中"）点击直接忽略，避免并发打开第二个追加流。
+ */
+@Composable
+private fun FileBubble(msg: ChatMessage, onDownload: () -> Unit, onOpen: () -> Unit) {
+    val downloaded = msg.localPath != null && !msg.localPath!!.endsWith(".part")
+    val downloading = msg.status == ChatMessage.Status.SENDING
+    Column(
+        Modifier.widthIn(max = 260.dp)
+            .background(if (msg.fromMe) Color(0xFF95EC69) else Color.White, RoundedCornerShape(8.dp))
+            .clickable {
+                when {
+                    downloaded -> onOpen()
+                    !msg.fromMe && !downloading -> onDownload()
+                    // 下载中或己方发送记录：忽略点击，防止重复下载/无意义交互
+                }
+            }
+            .padding(12.dp),
+    ) {
+        Text("📄 ${msg.fileName}", fontSize = 14.sp)
+        Text(humanSize(msg.fileSize), fontSize = 11.sp, color = Color.Gray)
+        val total = ((msg.fileSize + FILE_CHUNK - 1) / FILE_CHUNK).toInt().coerceAtLeast(1)
+        when {
+            downloading ->
+                Text("${(msg.transferred * 100 / total)}%", fontSize = 11.sp, color = Color.Gray)
+            downloaded -> Text("点击打开", fontSize = 11.sp, color = Color(0xFF07C160))
+            !msg.fromMe -> Text("点击下载", fontSize = 11.sp, color = Color(0xFF07C160))
+            else -> Text("已发送", fontSize = 11.sp, color = Color.Gray)
+        }
+    }
+}
+
+private const val FILE_CHUNK = 256 * 1024
+private fun humanSize(b: Long): String = when {
+    b >= 1 shl 20 -> "%.1f MB".format(b / 1048576.0)
+    b >= 1 shl 10 -> "%.1f KB".format(b / 1024.0)
+    else -> "$b B"
+}
+private fun openFile(context: android.content.Context, path: String, name: String) {
+    val file = java.io.File(path)
+    val uri = androidx.core.content.FileProvider.getUriForFile(context, "com.jitong.im.fileprovider", file)
+    val mime = context.contentResolver.getType(uri) ?: "*/*"
+    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
+        .setDataAndType(uri, mime)
+        .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    runCatching { context.startActivity(intent) }
 }
 
 @Composable
