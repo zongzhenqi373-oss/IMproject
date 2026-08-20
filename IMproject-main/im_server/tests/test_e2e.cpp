@@ -362,6 +362,7 @@ int main()
     const std::string big2Sha = im::sha256Hex(big);
     a2.sendFileOffer(fmsgId2, idB, "resume.bin", (std::int64_t)big.size(), 2, big2Sha);
     assert(ea2.waitFor([&] { return ea2.gotOffer && ea2.lastOffer.msgId == fmsgId2; }));
+    ea2.lastProgressRecv = -1;
     a2.sendFileChunk(fmsgId2, 0, big.substr(0, 256*1024)); // 只发第 0 块
     // 等服务端落盘该块
     assert(ea2.waitFor([&] { return ea2.lastProgressRecv >= 1; }));
@@ -369,6 +370,7 @@ int main()
     a2.sendFileOffer(fmsgId2, idB, "resume.bin", (std::int64_t)big.size(), 2, big2Sha); // 重发 Offer
     assert(ea2.waitFor([&] { return ea2.gotOffer && ea2.lastOffer.msgId == fmsgId2; }));
     assert(ea2.lastOffer.receivedChunks == 1); // 水位线续传起点=1
+    ea2.lastProgressStatus = -1;
     a2.sendFileChunk(fmsgId2, 1, big.substr(256*1024)); // 续发第 1 块
     a2.sendFileComplete(fmsgId2, fmsgId2);
     assert(ea2.waitFor([&] { return ea2.lastProgressStatus == FILE_ST_DONE; }));
