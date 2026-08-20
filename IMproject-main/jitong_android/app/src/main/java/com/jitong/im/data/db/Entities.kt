@@ -31,6 +31,11 @@ data class MessageEntity(
     val imgH: Int = 0,
     val ts: Long,
     val seq: Long = 0,            // 会话级序列号（服务端分配），聊天排序主键
+    val fileId: String = "",
+    val fileName: String = "",
+    val fileSize: Long = 0,
+    val localPath: String? = null,   // 文件本地路径（.part 进行中 / 成品）
+    val transferred: Int = 0,        // 已传/已收块数（进度 + 续传游标）
     val status: Int,              // 0发送中 1已送达 2已接收 3离线转存
 )
 

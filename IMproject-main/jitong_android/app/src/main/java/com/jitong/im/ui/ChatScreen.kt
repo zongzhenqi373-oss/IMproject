@@ -249,6 +249,17 @@ private fun MessageRow(msg: ChatMessage, peerNick: String, myNick: String, myId:
                 ) { Text(msg.text) }
 
                 MsgKind.IMAGE -> ImageBubble(msg)
+
+                // 文件消息气泡：完整 UI（进度/下载）留给 Task 13，此处先占位展示文件名，保证可编译可用
+                MsgKind.FILE -> Box(
+                    Modifier
+                        .widthIn(max = 260.dp)
+                        .background(
+                            if (msg.fromMe) Color(0xFF95EC69) else Color.White,
+                            RoundedCornerShape(8.dp),
+                        )
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                ) { Text("[文件] ${msg.fileName}") }
             }
             if (msg.fromMe) {
                 Text(

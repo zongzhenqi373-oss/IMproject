@@ -25,7 +25,7 @@ data class Friend(
     val online: Boolean,
 )
 
-enum class MsgKind { TEXT, IMAGE }
+enum class MsgKind { TEXT, IMAGE, FILE }
 
 data class ChatMessage(
     val msgId: String,
@@ -38,6 +38,11 @@ data class ChatMessage(
     val imgH: Int = 0,
     val ts: Long = System.currentTimeMillis(),
     val seq: Long = 0,      // 会话级序列号（服务端分配）；本端刚发出、未确认的消息为 0，排在末尾
+    val fileId: String = "",
+    val fileName: String = "",
+    val fileSize: Long = 0,
+    val localPath: String? = null,
+    val transferred: Int = 0,
     val status: Status = Status.RECEIVED,
 ) {
     enum class Status { SENDING, DELIVERED, OFFLINE_STORED, RECEIVED }

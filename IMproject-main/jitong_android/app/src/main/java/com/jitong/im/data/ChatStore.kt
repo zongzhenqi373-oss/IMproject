@@ -36,7 +36,11 @@ class ChatStore(context: Context) {
             }
             val inserted = db.messageDao().insertWithFts(m.toEntity(ownerId, mediaPath))
             if (inserted && bumpConversation) {
-                val lastMsg = if (m.kind == MsgKind.IMAGE) "[图片]" else m.text
+                val lastMsg = when (m.kind) {
+                    MsgKind.IMAGE -> "[图片]"
+                    MsgKind.FILE -> "[文件] ${m.fileName}"
+                    else -> m.text
+                }
                 db.conversationDao().upsertOnMessage(
                     conversationId(ownerId, m.peerId), ownerId, m.peerId,
                     lastMsg, m.ts, incrUnread && !m.fromMe,
@@ -97,8 +101,14 @@ class ChatStore(context: Context) {
         return ChatMessage(
             msgId = msgId, peerId = peerId, fromMe = fromMe,
             text = content.orEmpty(),
-            kind = if (type == 1) MsgKind.IMAGE else MsgKind.TEXT,
+            kind = when (type) {
+                1 -> MsgKind.IMAGE
+                2 -> MsgKind.FILE
+                else -> MsgKind.TEXT
+            },
             imageBytes = bytes, imgW = imgW, imgH = imgH, ts = ts, seq = seq,
+            fileId = fileId, fileName = fileName, fileSize = fileSize,
+            localPath = localPath, transferred = transferred,
             status = when (status) {
                 0 -> ChatMessage.Status.SENDING
                 1 -> ChatMessage.Status.DELIVERED
@@ -112,10 +122,16 @@ class ChatStore(context: Context) {
         ownerId = ownerId, msgId = msgId,
         conversationId = conversationId(ownerId, peerId),
         peerId = peerId, fromMe = fromMe,
-        type = if (kind == MsgKind.IMAGE) 1 else 0,
+        type = when (kind) {
+            MsgKind.IMAGE -> 1
+            MsgKind.FILE -> 2
+            else -> 0
+        },
         content = if (kind == MsgKind.TEXT) text else null,
         mediaPath = mediaPath,
         imgW = imgW, imgH = imgH, ts = ts, seq = seq,
+        fileId = fileId, fileName = fileName, fileSize = fileSize,
+        localPath = localPath, transferred = transferred,
         status = status.toDb(),
     )
 
