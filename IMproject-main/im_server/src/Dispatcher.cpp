@@ -566,7 +566,9 @@ void Dispatcher::onFileCompleteRq(const std::shared_ptr<Session>& s, const std::
     m.fileId = rq.file_id();
     m.fileSize = up.fileSize;
     m.ts = nowSec();
-    const bool online = (bool)m_server.presence().get(up.receiverId);
+    // 只查询一次，保证写库的投递状态、实际转发对象和发送方回执口径一致。
+    auto target = m_server.presence().get(up.receiverId);
+    const bool online = (bool)target;
     m_server.db().saveMessage(m, online);
 
     // 组文件卡片（ChatInfoRq type=FILE），转发在线接收方 / 离线等补发
@@ -580,7 +582,7 @@ void Dispatcher::onFileCompleteRq(const std::shared_ptr<Session>& s, const std::
     card.set_file_name(up.fileName);
     card.set_file_size(up.fileSize);
     card.set_file_id(rq.file_id());
-    if (auto target = m_server.presence().get(up.receiverId)) {
+    if (target) {
         target->deliver(DEF_PROT_CHAT_INFO_RQ, card.SerializeAsString());
     }
 
@@ -591,6 +593,8 @@ void Dispatcher::onFileCompleteRq(const std::shared_ptr<Session>& s, const std::
     FileProgressRs pr; pr.set_file_id(rq.file_id());
     pr.set_status(FILE_ST_DONE);
     pr.set_received_chunks(up.totalChunks); pr.set_total_chunks(up.totalChunks);
+    pr.set_seq(m.seq);
+    pr.set_delivered(online);
     s->deliver(DEF_PROT_FILE_PROGRESS_RS, pr.SerializeAsString());
     log("[业务] 文件完成 file=", up.fileName, " -> ", finalPath, " online=", online);
 }

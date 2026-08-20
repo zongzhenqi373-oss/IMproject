@@ -133,6 +133,8 @@ message FileProgressRs { // 1021 S→C：上传/下载进度共用
   int32  received_chunks = 2;
   int32  total_chunks = 3;
   int32  status = 4;          // proto::FILE_ST_*
+  int64  seq = 5;             // 上传 DONE 时返回服务端会话序号；其他进度为 0
+  bool   delivered = 6;       // 上传 DONE 时：接收方在线且已转发；false 表示离线转存
 }
 
 message FileDownloadRq { // 1022 C→S：接收方发起/续传下载
