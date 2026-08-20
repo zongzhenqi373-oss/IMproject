@@ -4,6 +4,10 @@
 cmake_minimum_required(VERSION 3.20)
 project(im_server LANGUAGES CXX)
 
+# 导出每个源文件的真实编译命令，供 VS Code C/C++ IntelliSense 使用。
+# 避免编辑器从多个 im.pb.h / Protocol.h 候选中索引到旧构建产物。
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
