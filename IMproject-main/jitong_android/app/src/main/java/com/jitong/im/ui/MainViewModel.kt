@@ -640,14 +640,20 @@ class MainViewModel : ViewModel() {
                 runCatching { d.out.close() }
                 val ctx = appContext ?: return@launch
                 val finalFile = java.io.File(java.io.File(ctx.filesDir, "file"), "${d.fileId}_${d.name}")
-                d.partFile.renameTo(finalFile)
-                store?.updateFileLocalPath(client.myId, d.fileId, finalFile.absolutePath)
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    val conv = _messages.value[d.peerId] ?: return@withContext
-                    _messages.value = _messages.value + (d.peerId to conv.map {
-                        if (it.fileId == d.fileId) it.copy(localPath = finalFile.absolutePath, status = ChatMessage.Status.RECEIVED) else it })
+                val ok = d.partFile.renameTo(finalFile)
+                if (ok) {
+                    store?.updateFileLocalPath(client.myId, d.fileId, finalFile.absolutePath)
                 }
-                downloads.remove(d.fileId)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    if (ok) {
+                        val conv = _messages.value[d.peerId] ?: return@withContext
+                        _messages.value = _messages.value + (d.peerId to conv.map {
+                            if (it.fileId == d.fileId) it.copy(localPath = finalFile.absolutePath, status = ChatMessage.Status.RECEIVED) else it })
+                    } else {
+                        notify("文件保存失败")
+                    }
+                    downloads.remove(d.fileId)
+                }
             }
         } else if (e.status == Protocol.FILE_ST_FAILED) {
             runCatching { d.out.close() }; downloads.remove(e.fileId); notify("文件已失效")
