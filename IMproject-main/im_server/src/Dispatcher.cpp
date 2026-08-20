@@ -8,6 +8,7 @@
 #include "image_format.h"
 
 #include <atomic>
+#include <cctype>
 #include <cstdint>
 #include <ctime>
 #include <filesystem>
@@ -399,8 +400,23 @@ std::string Dispatcher::filePartPath(const std::string& fileId) const
 }
 std::string Dispatcher::fileFinalPath(const std::string& fileId, const std::string& name) const
 {
-    return m_server.uploadDir() + "/file/" + fileId + "_" + name;
+    // I2: 磁盘路径只用 basename，防止 file_name 携带路径穿越（../、绝对路径等）
+    const std::string base = std::filesystem::path(name).filename().string();
+    return m_server.uploadDir() + "/file/" + fileId + "_" + base;
 }
+
+namespace {
+// I2: file_id（== msg_id）只允许安全字符集，防止用作路径片段时发生穿越
+bool isSafeFileId(const std::string& id)
+{
+    if (id.empty()) return false;
+    for (char c : id) {
+        if (!(std::isalnum((unsigned char)c) || c == '.' || c == '_' || c == '-')) return false;
+    }
+    if (id.find("..") != std::string::npos) return false;
+    return true;
+}
+} // namespace
 
 void Dispatcher::onFileOfferRq(const std::shared_ptr<Session>& s, const std::string& payload)
 {
@@ -411,19 +427,34 @@ void Dispatcher::onFileOfferRq(const std::shared_ptr<Session>& s, const std::str
     FileOfferRs rs;
     rs.set_msg_id(rq.msg_id());
     rs.set_file_id(rq.msg_id()); // file_id == msg_id
-    if (rq.file_size() > FILE_MAX_SIZE || rq.file_size() < 0) {
+    if (rq.file_size() <= 0 || rq.file_size() > FILE_MAX_SIZE) {
         rs.set_result(FILE_OFFER_TOO_LARGE);
         rs.set_received_chunks(0);
         s->deliver(DEF_PROT_FILE_OFFER_RS, rs.SerializeAsString());
+        log("[业务] 文件协商拒绝(非法大小) id=", s->userId(), " size=", rq.file_size());
+        return;
+    }
+    if (!isSafeFileId(rq.msg_id())) {
+        rs.set_result(FILE_OFFER_TOO_LARGE);
+        rs.set_received_chunks(0);
+        s->deliver(DEF_PROT_FILE_OFFER_RS, rs.SerializeAsString());
+        log("[业务] 文件协商拒绝(非法file_id) id=", s->userId(), " file_id=", rq.msg_id());
         return;
     }
     std::error_code ec;
     std::filesystem::create_directories(m_server.uploadDir() + "/file/tmp", ec);
     // 水位线 N = 已有 .part 大小 / CHUNK_SIZE（顺序追加，故整除即已连续收到块数）
+    // I1: 末块可能是不足一个 CHUNK 的部分块，此时 partSize == fileSize 但非 CHUNK 整数倍，
+    // 需要特判为"已全部收到"，否则 N 会回退指向最后一个块下标，导致重发死锁。
     const std::string part = filePartPath(rq.msg_id());
     std::int64_t partSize = 0;
     if (std::filesystem::exists(part, ec)) partSize = (std::int64_t)std::filesystem::file_size(part, ec);
-    const int n = (int)(partSize / (std::int64_t)FILE_CHUNK_SIZE);
+    int n;
+    if (rq.file_size() > 0 && partSize >= rq.file_size()) {
+        n = rq.total_chunks();
+    } else {
+        n = (int)(partSize / (std::int64_t)FILE_CHUNK_SIZE);
+    }
     rs.set_received_chunks(n);
     rs.set_result(FILE_OFFER_OK);
     {
@@ -446,10 +477,19 @@ void Dispatcher::onFileChunkRq(const std::shared_ptr<Session>& s, const std::str
     std::int64_t partSize = std::filesystem::exists(part, ec)
         ? (std::int64_t)std::filesystem::file_size(part, ec) : 0;
     const int n = (int)(partSize / (std::int64_t)FILE_CHUNK_SIZE);
-    if (rq.chunk_index() == n) {
+    // I1: 只有当仍有数据缺口（partSize < fileSize）时才追加，避免末块（不足一个 CHUNK）
+    // 写入后被重复追加，导致 partSize 超过 fileSize 而使 onFileCompleteRq 永久失败。
+    std::int64_t expectedFileSize = -1;
+    {
+        std::lock_guard<std::mutex> lg(m_uploadMtx);
+        auto it = m_pendingUploads.find(rq.file_id());
+        if (it != m_pendingUploads.end()) expectedFileSize = it->second.fileSize;
+    }
+    const bool stillExpectingData = (expectedFileSize < 0) || (partSize < expectedFileSize);
+    if (rq.chunk_index() == n && stillExpectingData) {
         std::ofstream ofs(part, std::ios::binary | std::ios::app);
         ofs.write(rq.data().data(), (std::streamsize)rq.data().size());
-    } // <n 幂等丢弃；>n 忽略（顺序传输不应乱序）
+    } // <n 幂等丢弃；>n 忽略（顺序传输不应乱序）；已收满则忽略（幂等）
 
     // 回进度（新水位线）
     std::int64_t newSize = std::filesystem::exists(part, ec)
