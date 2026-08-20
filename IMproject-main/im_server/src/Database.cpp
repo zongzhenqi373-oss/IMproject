@@ -373,7 +373,7 @@ std::vector<StoredMessage> Database::pullUndelivered(int receiverId)
 
     sqlite3_stmt* st = nullptr;
     sqlite3_prepare_v2(c.db,
-        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq "
+        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq, file_id, file_size "
         "FROM messages WHERE receiver_id=? AND is_delivered=0 ORDER BY seq ASC;",
         -1, &st, nullptr);
     sqlite3_bind_int(st, 1, receiverId);
@@ -392,6 +392,9 @@ std::vector<StoredMessage> Database::pullUndelivered(int receiverId)
         m.imgH = sqlite3_column_int(st, 7);
         m.ts = sqlite3_column_int64(st, 8);
         m.seq = sqlite3_column_int64(st, 9);
+        const unsigned char* fileId = sqlite3_column_text(st, 10);
+        m.fileId = fileId ? reinterpret_cast<const char*>(fileId) : "";
+        m.fileSize = sqlite3_column_int64(st, 11);
         out.push_back(std::move(m));
     }
     sqlite3_finalize(st);
@@ -415,7 +418,7 @@ void Database::markDelivered(const std::vector<std::string>& msgIds)
 }
 
 // 从结果集当前行装载一条 StoredMessage（列序须与 SELECT 一致：
-// msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq）
+// msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq, file_id, file_size）
 static StoredMessage readMessageRow(sqlite3_stmt* st)
 {
     StoredMessage m;
@@ -432,6 +435,9 @@ static StoredMessage readMessageRow(sqlite3_stmt* st)
     m.imgH = sqlite3_column_int(st, 7);
     m.ts = sqlite3_column_int64(st, 8);
     m.seq = sqlite3_column_int64(st, 9);
+    const unsigned char* fileId = sqlite3_column_text(st, 10);
+    m.fileId = fileId ? reinterpret_cast<const char*>(fileId) : "";
+    m.fileSize = sqlite3_column_int64(st, 11);
     return m;
 }
 
@@ -446,7 +452,7 @@ std::vector<StoredMessage> Database::roamConversations(int userId)
     sqlite3_stmt* st = nullptr;
     sqlite3_prepare_v2(c.db,
         "SELECT m.msg_id, m.sender_id, m.receiver_id, m.type, m.content, m.media_path, "
-        "m.img_w, m.img_h, m.ts, m.seq FROM messages m JOIN ("
+        "m.img_w, m.img_h, m.ts, m.seq, m.file_id, m.file_size FROM messages m JOIN ("
         "  SELECT conversation_id, MAX(id) AS mid FROM ("
         "    SELECT conversation_id, id FROM messages WHERE sender_id=?"
         "    UNION ALL"
@@ -472,7 +478,7 @@ std::vector<StoredMessage> Database::roamMessages(int userId, int peerId, std::i
     // 会话内比游标更早的 N 条（seq 倒序），走 idx_msg_conv_seq
     sqlite3_stmt* st = nullptr;
     sqlite3_prepare_v2(c.db,
-        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq "
+        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq, file_id, file_size "
         "FROM messages WHERE conversation_id=? AND seq < ? ORDER BY seq DESC LIMIT ?;",
         -1, &st, nullptr);
     sqlite3_bind_int64(st, 1, convId);

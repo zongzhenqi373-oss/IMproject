@@ -57,7 +57,12 @@ bool fillChatInfo(im::proto::ChatInfoRq& out, const StoredMessage& m, bool withI
             std::string bytes((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
             out.set_image_data(bytes);
         }
-    } else {
+    } else if (m.type == 2) {
+        out.set_type(im::proto::FILE);
+        out.set_file_id(m.fileId);
+        out.set_file_name(m.content);
+        out.set_file_size(m.fileSize);
+    } else if (m.type == 0){
         out.set_type(im::proto::TEXT);
         out.set_msg(m.content);
     }
@@ -180,7 +185,7 @@ void Dispatcher::onLoginRq(const std::shared_ptr<Session>& s, const std::string&
         ChatInfoRq out;
         out.set_myid(m.senderId);
         out.set_friid(userId);
-        out.set_type(m.type == 1 ? IMAGE : TEXT);
+        out.set_type(m.type == 1 ? IMAGE : (m.type == 2 ? im::proto::FILE : TEXT));
         out.set_msg_id(m.msgId);
         out.set_ts(m.ts); // 带回原始发送时间（秒），接收方据此排序，不用"收到时刻"
         out.set_seq(m.seq); // 带回会话级 seq，接收方按 seq 严格排序
@@ -193,6 +198,11 @@ void Dispatcher::onLoginRq(const std::shared_ptr<Session>& s, const std::string&
             out.set_image_data(bytes);
             out.set_image_width(m.imgW);
             out.set_image_height(m.imgH);
+        } else if (m.type == 2) {
+            // 文件消息只补发元数据；接收方点击卡片后再走分片下载协议。
+            out.set_file_id(m.fileId);
+            out.set_file_name(m.content);
+            out.set_file_size(m.fileSize);
         }
         s->deliver(DEF_PROT_CHAT_INFO_RQ, out.SerializeAsString());
         deliveredIds.push_back(m.msgId);
