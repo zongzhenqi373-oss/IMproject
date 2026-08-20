@@ -36,6 +36,32 @@ interface MessageDao {
     @Query("UPDATE messages SET seq = :seq WHERE ownerId = :ownerId AND msgId = :msgId")
     suspend fun updateSeq(ownerId: Int, msgId: String, seq: Long)
 
+    /** App/连接中断后不存在仍在执行的下载任务；接收文件的 SENDING 均为遗留状态。 */
+    @Query("UPDATE messages SET status = 2 WHERE ownerId = :ownerId AND type = 2 AND fromMe = 0 AND status = 0")
+    suspend fun recoverInterruptedFileDownloads(ownerId: Int)
+
+    /** 服务端离线补发是权威元数据：校正同 msgId 的旧接收记录，而不是被 INSERT IGNORE 丢弃。 */
+    @Query("""UPDATE messages SET fileId = :fileId, fileName = :fileName,
+        fileSize = CASE WHEN :fileSize > 0 THEN :fileSize ELSE fileSize END,
+        ts = CASE WHEN :ts > 0 THEN :ts ELSE ts END,
+        seq = CASE WHEN :seq > 0 THEN :seq ELSE seq END, status = 2
+        WHERE ownerId = :ownerId AND msgId = :msgId AND type = 2 AND fromMe = 0""")
+    suspend fun reconcileIncomingFile(
+        ownerId: Int, msgId: String, fileId: String, fileName: String,
+        fileSize: Long, ts: Long, seq: Long,
+    )
+
+    @Query("""UPDATE messages SET localPath = :path,
+        fileId = CASE WHEN fileId = '' THEN :fileId ELSE fileId END
+        WHERE ownerId = :ownerId AND (fileId = :fileId OR msgId = :fileId)""")
+    suspend fun updateLocalPath(ownerId: Int, fileId: String, path: String)
+
+    @Query("UPDATE messages SET fileId = :fileId WHERE ownerId = :ownerId AND msgId = :msgId AND type = 2 AND fileId = ''")
+    suspend fun repairFileId(ownerId: Int, msgId: String, fileId: String)
+
+    @Query("UPDATE messages SET localPath = :path, fileSize = :size WHERE ownerId = :ownerId AND msgId = :msgId")
+    suspend fun updateOutgoingFile(ownerId: Int, msgId: String, path: String, size: Long)
+
     /** FTS 前缀匹配（simple 分词：英文按词、中文整串前缀） */
     @Query(
         """SELECT m.* FROM messages m JOIN messages_fts f ON m.msgId = f.msgId

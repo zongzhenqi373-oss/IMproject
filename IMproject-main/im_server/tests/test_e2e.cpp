@@ -49,6 +49,13 @@ struct RecordingEvents : IClientEvents {
     struct ImageMsg { int fromId; std::string bytes; int w; int h; std::string msgId; };
     std::vector<ImageMsg> images;
 
+    // 文件收集
+    im::FileOfferInfo lastOffer; bool gotOffer = false;
+    std::vector<std::pair<int,std::string>> downloadChunks; // (chunkIndex, data)
+    int lastProgressStatus = -1; int lastProgressRecv = -1;
+    struct FileCard { int fromId; std::string fileId; std::string name; std::int64_t size; std::string msgId; };
+    std::vector<FileCard> fileCards;
+
     // 漫游收集
     std::vector<RoamMessage> roamConvs;
     bool gotRoamConvs = false;
@@ -75,6 +82,20 @@ struct RecordingEvents : IClientEvents {
     }
     void onRoamMessages(int peerId, const std::vector<RoamMessage>& msgs, bool hasMore, std::int64_t minSeq) override {
         std::lock_guard<std::mutex> l(mtx); roamPages.push_back({peerId, msgs, hasMore, minSeq}); notify();
+    }
+
+    void onFileOfferResult(const im::FileOfferInfo& i) override {
+        std::lock_guard<std::mutex> l(mtx); lastOffer = i; gotOffer = true; notify();
+    }
+    void onFileChunk(const std::string&, int idx, const std::string& d) override {
+        std::lock_guard<std::mutex> l(mtx); downloadChunks.emplace_back(idx, d); notify();
+    }
+    void onFileProgress(const std::string&, int recv, int, int status) override {
+        std::lock_guard<std::mutex> l(mtx); lastProgressRecv = recv; lastProgressStatus = status; notify();
+    }
+    void onFileCard(int fromId, const std::string& fileId, const std::string& name,
+                    std::int64_t size, const std::string& msgId) override {
+        std::lock_guard<std::mutex> l(mtx); fileCards.push_back({fromId, fileId, name, size, msgId}); notify();
     }
 
     template <typename Pred>
@@ -306,6 +327,112 @@ int main()
         assert(pg.msgs.empty());
         assert(!pg.hasMore);
     }
+
+    // ============ M7：文件上传（分片 + 水位线 + Complete 校验 + 卡片转发） ============
+    // 造一个 300KB 文件（2 块：256KB + 44KB），a2(张三 idA) 发给 idB
+    std::string fileBytes(300 * 1024, '\0');
+    for (size_t i = 0; i < fileBytes.size(); ++i) fileBytes[i] = static_cast<char>((i * 31 + 7) % 256);
+    const int chunkSz = 256 * 1024;
+    const int totalChunks = (static_cast<int>(fileBytes.size()) + chunkSz - 1) / chunkSz; // 2
+    const std::string fileSha = im::sha256Hex(fileBytes);
+    const std::string fmsgId = "file-e2e-0001";
+
+    a2.sendFileOffer(fmsgId, idB, "report.bin", (std::int64_t)fileBytes.size(), totalChunks, fileSha);
+    assert(ea2.waitFor([&] { return ea2.gotOffer && ea2.lastOffer.msgId == fmsgId; }));
+    assert(ea2.lastOffer.result == FILE_OFFER_OK);
+    assert(ea2.lastOffer.receivedChunks == 0); // 新文件水位线 0
+
+    for (int i = 0; i < totalChunks; ++i) {
+        size_t off = (size_t)i * chunkSz;
+        size_t len = std::min((size_t)chunkSz, fileBytes.size() - off);
+        a2.sendFileChunk(fmsgId, i, fileBytes.substr(off, len));
+    }
+    a2.sendFileComplete(fmsgId, fmsgId);
+    // 发送方应收到 done 进度
+    assert(ea2.waitFor([&] { return ea2.lastProgressStatus == FILE_ST_DONE; }));
+    // 接收方 b3(李四) 应收到文件卡片（ChatInfoRq type=FILE，走在线转发）
+    assert(eb3.waitFor([&] {
+        for (auto& fc : eb3.fileCards) if (fc.fileId == fmsgId && fc.name == "report.bin") return true;
+        return false;
+    }));
+
+    // 断点续传：新文件只发第 0 块就"中断"，重发 Offer 应返回 N=1
+    const std::string fmsgId2 = "file-e2e-0002";
+    std::string big(300 * 1024, 'A');
+    const std::string big2Sha = im::sha256Hex(big);
+    a2.sendFileOffer(fmsgId2, idB, "resume.bin", (std::int64_t)big.size(), 2, big2Sha);
+    assert(ea2.waitFor([&] { return ea2.gotOffer && ea2.lastOffer.msgId == fmsgId2; }));
+    ea2.lastProgressRecv = -1;
+    a2.sendFileChunk(fmsgId2, 0, big.substr(0, 256*1024)); // 只发第 0 块
+    // 等服务端落盘该块
+    assert(ea2.waitFor([&] { return ea2.lastProgressRecv >= 1; }));
+    ea2.gotOffer = false;
+    a2.sendFileOffer(fmsgId2, idB, "resume.bin", (std::int64_t)big.size(), 2, big2Sha); // 重发 Offer
+    assert(ea2.waitFor([&] { return ea2.gotOffer && ea2.lastOffer.msgId == fmsgId2; }));
+    assert(ea2.lastOffer.receivedChunks == 1); // 水位线续传起点=1
+    ea2.lastProgressStatus = -1;
+    a2.sendFileChunk(fmsgId2, 1, big.substr(256*1024)); // 续发第 1 块
+    a2.sendFileComplete(fmsgId2, fmsgId2);
+    assert(ea2.waitFor([&] { return ea2.lastProgressStatus == FILE_ST_DONE; }));
+
+    // 下载：b3(李四) 从 file-e2e-0001 的第 0 块开始拉，应收到 2 块，拼接 == fileBytes
+    eb3.downloadChunks.clear();
+    b3.sendFileDownload(fmsgId, 0);
+    assert(eb3.waitFor([&] {
+        int bytes = 0; for (auto& c : eb3.downloadChunks) bytes += (int)c.second.size();
+        return bytes == (int)fileBytes.size();
+    }));
+    // 断点续传下载：从第 1 块拉，只应收到第 1 块（44KB）
+    eb3.downloadChunks.clear();
+    b3.sendFileDownload(fmsgId, 1);
+    assert(eb3.waitFor([&] {
+        return eb3.downloadChunks.size() == 1 && eb3.downloadChunks[0].first == 1;
+    }));
+
+    // ============ M7 I1 回归：末块为部分块时重发 Offer 不应死锁 ============
+    // 300KB 文件（2 块：256KB 整块 + 44KB 部分块）。发完两块（包含部分末块）后，
+    // 在 Complete 之前重发 Offer：应报告 receivedChunks == totalChunks（已全部收到），
+    // 而不是回退指向最后一个块下标（这会导致客户端重发末块，破坏 partSize == fileSize 的假设）。
+    const std::string fmsgId4 = "file-e2e-0004-partial";
+    a2.sendFileOffer(fmsgId4, idB, "partial.bin", (std::int64_t)fileBytes.size(), totalChunks, fileSha);
+    ea2.gotOffer = false;
+    assert(ea2.waitFor([&] { return ea2.gotOffer && ea2.lastOffer.msgId == fmsgId4; }));
+    assert(ea2.lastOffer.receivedChunks == 0);
+
+    for (int i = 0; i < totalChunks; ++i) {
+        size_t off = (size_t)i * chunkSz;
+        size_t len = std::min((size_t)chunkSz, fileBytes.size() - off);
+        a2.sendFileChunk(fmsgId4, i, fileBytes.substr(off, len));
+    }
+    // 等服务端落盘全部字节（水位线达到 totalChunks），再重发 Offer
+    assert(ea2.waitFor([&] { return ea2.lastProgressRecv >= totalChunks; }));
+
+    ea2.gotOffer = false; // 复位共享标量，避免断言基于上一轮遗留状态而假通过
+    a2.sendFileOffer(fmsgId4, idB, "partial.bin", (std::int64_t)fileBytes.size(), totalChunks, fileSha); // 重发 Offer（未 Complete）
+    assert(ea2.waitFor([&] { return ea2.gotOffer && ea2.lastOffer.msgId == fmsgId4; }));
+    assert(ea2.lastOffer.receivedChunks == totalChunks); // 已全部收到，不应回退到 totalChunks-1
+
+    ea2.lastProgressStatus = -1; // 复位，避免命中上一轮遗留的 DONE
+    a2.sendFileComplete(fmsgId4, fmsgId4);
+    assert(ea2.waitFor([&] { return ea2.lastProgressStatus == FILE_ST_DONE; }));
+
+    // ============ M7 边界：超限 + sha256 校验 ============
+
+    // 超限：声明 101MB → 拒绝
+    ea2.gotOffer = false;
+    a2.sendFileOffer("file-toolarge", idB, "big.bin", 101LL*1024*1024, 999, "deadbeef");
+    assert(ea2.waitFor([&] { return ea2.gotOffer && ea2.lastOffer.msgId == "file-toolarge"; }));
+    assert(ea2.lastOffer.result == FILE_OFFER_TOO_LARGE);
+
+    // sha256 不符：发正确字节但 Offer 声明错误 sha → Complete 应 failed
+    const std::string fmsgId3 = "file-badsha";
+    std::string data3(1024, 'Z');
+    ea2.gotOffer = false; ea2.lastProgressStatus = -1;
+    a2.sendFileOffer(fmsgId3, idB, "bad.bin", (std::int64_t)data3.size(), 1, "0000000000000000000000000000000000000000000000000000000000000000");
+    assert(ea2.waitFor([&] { return ea2.gotOffer && ea2.lastOffer.msgId == fmsgId3; }));
+    a2.sendFileChunk(fmsgId3, 0, data3);
+    a2.sendFileComplete(fmsgId3, fmsgId3);
+    assert(ea2.waitFor([&] { return ea2.lastProgressStatus == FILE_ST_FAILED; }));
 
     a2.disconnect();
     b3.disconnect();

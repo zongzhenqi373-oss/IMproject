@@ -49,6 +49,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -99,6 +100,13 @@ fun ChatScreen(vm: MainViewModel) {
         }
     }
 
+    // SAF 选文件（任意 MIME），交给 vm.sendFile 走上传状态机
+    val pickFile = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) vm.sendFile(uri, context.contentResolver)
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -138,7 +146,7 @@ fun ChatScreen(vm: MainViewModel) {
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(conv, key = { it.msgId }) { msg ->
-                    MessageRow(msg, peerNick = p.nick, myNick = vm.myNick.collectAsStateWithLifecycle().value, myId = vm.myId)
+                    MessageRow(msg, peerNick = p.nick, myNick = vm.myNick.collectAsStateWithLifecycle().value, myId = vm.myId, vm = vm)
                 }
             }
 
@@ -196,7 +204,7 @@ fun ChatScreen(vm: MainViewModel) {
                     }
                     PanelItem("文件") {
                         showPanel = false
-                        vm.notify("文件传输将在 M7 版本开放")
+                        pickFile.launch(arrayOf("*/*"))
                     }
                 }
             }
@@ -224,7 +232,8 @@ private fun PanelItem(label: String, onClick: () -> Unit) {
 
 /** 一条消息：头像 + 气泡（自己靠右绿色，对方靠左白色） */
 @Composable
-private fun MessageRow(msg: ChatMessage, peerNick: String, myNick: String, myId: Int) {
+private fun MessageRow(msg: ChatMessage, peerNick: String, myNick: String, myId: Int, vm: MainViewModel) {
+    val context = LocalContext.current
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = if (msg.fromMe) Arrangement.End else Arrangement.Start,
@@ -249,6 +258,11 @@ private fun MessageRow(msg: ChatMessage, peerNick: String, myNick: String, myId:
                 ) { Text(msg.text) }
 
                 MsgKind.IMAGE -> ImageBubble(msg)
+
+                // 文件消息气泡：图标 + 名称 + 大小 + 进度/下载/打开
+                MsgKind.FILE -> FileBubble(msg, onDownload = { vm.downloadFile(msg) }, onOpen = {
+                    msg.localPath?.let { openFile(context, it, msg.fileName) }
+                }, onRetry = { vm.retryFile(msg) })
             }
             if (msg.fromMe) {
                 Text(
@@ -256,6 +270,7 @@ private fun MessageRow(msg: ChatMessage, peerNick: String, myNick: String, myId:
                         ChatMessage.Status.SENDING -> "发送中…"
                         ChatMessage.Status.DELIVERED -> "已送达"
                         ChatMessage.Status.OFFLINE_STORED -> "对方离线，已转存"
+                        ChatMessage.Status.FAILED -> "发送失败，点击重试"
                         ChatMessage.Status.RECEIVED -> ""
                     },
                     fontSize = 10.sp,
@@ -268,6 +283,106 @@ private fun MessageRow(msg: ChatMessage, peerNick: String, myNick: String, myId:
             Avatar(id = myId, nick = myNick, size = 40.dp)
         }
     }
+}
+
+/**
+ * 固定尺寸文件卡片：左侧文件图标，右侧文件名及大小/操作状态。
+ *
+ * 下载防重入：downloadFile 内部对 .part 文件用追加流写入，无二次点击去重逻辑，
+ * 因此这里在 UI 层做守卫——仅当"未下载 且 非下载中（status != SENDING）"时才允许触发 onDownload，
+ * 下载中（对方视角复用 SENDING 表示"进行中"）点击直接忽略，避免并发打开第二个追加流。
+ */
+@Composable
+private fun FileBubble(msg: ChatMessage, onDownload: () -> Unit, onOpen: () -> Unit, onRetry: () -> Unit) {
+    val downloaded = msg.localPath != null && !msg.localPath!!.endsWith(".part")
+    val downloading = msg.status == ChatMessage.Status.SENDING
+    val failed = msg.fromMe && msg.status == ChatMessage.Status.FAILED
+    val total = ((msg.fileSize + FILE_CHUNK - 1) / FILE_CHUNK).toInt().coerceAtLeast(1)
+    val progress = (msg.transferred * 100 / total).coerceIn(0, 100)
+    val actionText = when {
+        downloading -> "传输中 $progress%"
+        failed -> "点击重试"
+        downloaded -> "点击打开"
+        !msg.fromMe -> "点击下载"
+        else -> "已发送"
+    }
+    val actionColor = when {
+        failed -> Color(0xFFD93025)
+        downloaded || !msg.fromMe -> Color(0xFF07C160)
+        else -> Color.Gray
+    }
+
+    Row(
+        Modifier
+            .width(260.dp)
+            .height(76.dp)
+            .background(if (msg.fromMe) Color(0xFF95EC69) else Color.White, RoundedCornerShape(8.dp))
+            .clickable {
+                when {
+                    failed -> onRetry()
+                    downloaded -> onOpen()
+                    !msg.fromMe && !downloading -> onDownload()
+                    // 下载中或己方发送记录：忽略点击，防止重复下载/无意义交互
+                }
+            }
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(48.dp)
+                .background(Color.White.copy(alpha = 0.72f), RoundedCornerShape(8.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("📄", fontSize = 27.sp)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(
+            Modifier.weight(1f),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = msg.fileName.ifBlank { "未命名文件" },
+                fontSize = 14.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(5.dp))
+            Text(
+                text = "${humanSize(msg.fileSize)} · $actionText",
+                fontSize = 11.sp,
+                color = actionColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+private const val FILE_CHUNK = 256 * 1024
+private fun humanSize(b: Long): String = when {
+    b >= 1 shl 20 -> "%.1f MB".format(b / 1048576.0)
+    b >= 1 shl 10 -> "%.1f KB".format(b / 1024.0)
+    else -> "$b B"
+}
+private fun openFile(context: android.content.Context, path: String, name: String) {
+    runCatching {
+        val uri = if (path.startsWith("content://")) {
+            android.net.Uri.parse(path)
+        } else {
+            androidx.core.content.FileProvider.getUriForFile(
+                context, "${context.packageName}.fileprovider", java.io.File(path),
+            )
+        }
+        val mime = context.contentResolver.getType(uri)
+            ?: java.net.URLConnection.guessContentTypeFromName(name)
+            ?: "*/*"
+        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
+            .setDataAndType(uri, mime)
+            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        context.startActivity(intent)
+    }
+        .onFailure { android.widget.Toast.makeText(context, "无可打开该文件的应用", android.widget.Toast.LENGTH_SHORT).show() }
 }
 
 @Composable

@@ -108,3 +108,11 @@ message FileDownloadRq { // 1022 C→S
 4. C++ 客户端 `ClientCore`/`IClientEvents` 加文件收发；`test_e2e` 加 M7 断言。
 5. Android：`ImClient` 收发方法 + Event；`MainViewModel` 两套状态机 + 断点续传；`ChatScreen` SAF + 文件卡片；Room 迁移；`FileProvider`。
 6. 编译 + e2e 验证（服务端）、手测（客户端）。
+
+## 已知限制（实现后评审确认，暂缓）
+
+- **上传续传仅在连接存活期内生效，不跨 App 重启**（I4）：
+  - 现状：断线重连（连接未死）时，未完成的外发文件可从服务端水位线续发；**下载续传可跨 App 重启**（靠本地 `.part` 大小推算 `from_chunk`）。
+  - 缺口：上传的进行中状态（`uploads` map）仅驻内存，登录后未扫 Room 里未完成的外发 `FILE` 消息重发 Offer；且 `sendFile` 存的 SAF `content://` uri 未 `takePersistableUriPermission`，进程重启后不可读。
+  - 补齐方案（后续里程碑）：登录后扫描 Room 中 `status=SENDING` 的外发 FILE 消息重发 `FileOfferRq`；`sendFile` 时对 uri 调用 `takePersistableUriPermission`（或首选先把待发文件拷入 app 私有目录再传）。
+  - 影响面：仅"发送大文件时杀掉 App 再重开"这一场景需从头重传；常规发送、弱网瞬断、以及所有下载场景不受影响。

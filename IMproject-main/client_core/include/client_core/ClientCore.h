@@ -74,6 +74,19 @@ public:
     {
         (void)peerId; (void)msgs; (void)hasMore; (void)minSeq;
     }
+
+    // 文件协商结果（含断点续传起点）
+    virtual void onFileOfferResult(const FileOfferInfo& info) { (void)info; }
+    // 收到文件分片（下载时 S→C；data 为该块字节）
+    virtual void onFileChunk(const std::string& fileId, int chunkIndex, const std::string& data)
+    { (void)fileId; (void)chunkIndex; (void)data; }
+    // 传输进度（上传/下载共用）
+    virtual void onFileProgress(const std::string& fileId, int received, int total, int status)
+    { (void)fileId; (void)received; (void)total; (void)status; }
+    // 收到文件卡片（ChatInfoRq type=FILE，在线转发/离线补发共用）
+    virtual void onFileCard(int fromId, const std::string& fileId, const std::string& name,
+                            std::int64_t size, const std::string& msgId)
+    { (void)fromId; (void)fileId; (void)name; (void)size; (void)msgId; }
 };
 
 class ClientCore {
@@ -120,6 +133,13 @@ public:
     // 拉某会话比 beforeSeq 更早的 limit 条（首次传极大值拉最新，上拉传当前已加载最小 seq）
     void sendRoamMsgRq(int peerId, std::int64_t beforeSeq, int limit);
 
+    // ---------------- 文件传输（M7） ----------------
+    void sendFileOffer(const std::string& msgId, int receiverId, const std::string& name,
+                       std::int64_t size, int totalChunks, const std::string& sha256);
+    void sendFileChunk(const std::string& fileId, int index, const std::string& data);
+    void sendFileComplete(const std::string& fileId, const std::string& msgId);
+    void sendFileDownload(const std::string& fileId, int fromChunk);
+
     // ---------------- 会话状态 ----------------
     int myId() const;
     std::string myNick() const;
@@ -149,6 +169,10 @@ private:
     // 漫游响应
     void onRoamConvRs(const char* data, std::size_t len);
     void onRoamMsgRs(const char* data, std::size_t len);
+
+    void onFileOfferRs(const char* data, std::size_t len);
+    void onFileChunkRq(const char* data, std::size_t len);
+    void onFileProgressRs(const char* data, std::size_t len);
 
     // ---------------- 心跳保活 ----------------
     void startHeartbeat();

@@ -106,6 +106,9 @@ void ClientCore::initFunArr()
     m_dealFunArr[DEF_PROT_KICKED_OFFLINE - DEF_BASE] = &ClientCore::onKickedOfflinePkt;
     m_dealFunArr[DEF_PROT_ROAM_CONV_RS   - DEF_BASE] = &ClientCore::onRoamConvRs;
     m_dealFunArr[DEF_PROT_ROAM_MSG_RS    - DEF_BASE] = &ClientCore::onRoamMsgRs;
+    m_dealFunArr[DEF_PROT_FILE_OFFER_RS    - DEF_BASE] = &ClientCore::onFileOfferRs;
+    m_dealFunArr[DEF_PROT_FILE_CHUNK_RQ    - DEF_BASE] = &ClientCore::onFileChunkRq;
+    m_dealFunArr[DEF_PROT_FILE_PROGRESS_RS - DEF_BASE] = &ClientCore::onFileProgressRs;
 }
 
 void ClientCore::dispatchPacket(const char* data, std::size_t len)
@@ -234,6 +237,44 @@ void ClientCore::sendRoamMsgRq(int peerId, std::int64_t beforeSeq, int limit)
     sendPacket(DEF_PROT_ROAM_MSG_RQ, rq.SerializeAsString());
 }
 
+void ClientCore::sendFileOffer(const std::string& msgId, int receiverId, const std::string& name,
+                               std::int64_t size, int totalChunks, const std::string& sha256)
+{
+    im::proto::FileOfferRq rq;
+    rq.set_msg_id(msgId);
+    rq.set_receiver_id(receiverId);
+    rq.set_file_name(name);
+    rq.set_file_size(size);
+    rq.set_total_chunks(totalChunks);
+    rq.set_sha256(sha256);
+    sendPacket(DEF_PROT_FILE_OFFER_RQ, rq.SerializeAsString());
+}
+
+void ClientCore::sendFileChunk(const std::string& fileId, int index, const std::string& data)
+{
+    im::proto::FileChunkRq rq;
+    rq.set_file_id(fileId);
+    rq.set_chunk_index(index);
+    rq.set_data(data);
+    sendPacket(DEF_PROT_FILE_CHUNK_RQ, rq.SerializeAsString());
+}
+
+void ClientCore::sendFileComplete(const std::string& fileId, const std::string& msgId)
+{
+    im::proto::FileCompleteRq rq;
+    rq.set_file_id(fileId);
+    rq.set_msg_id(msgId);
+    sendPacket(DEF_PROT_FILE_COMPLETE_RQ, rq.SerializeAsString());
+}
+
+void ClientCore::sendFileDownload(const std::string& fileId, int fromChunk)
+{
+    im::proto::FileDownloadRq rq;
+    rq.set_file_id(fileId);
+    rq.set_from_chunk(fromChunk);
+    sendPacket(DEF_PROT_FILE_DOWNLOAD_RQ, rq.SerializeAsString());
+}
+
 // ---------------- 心跳保活 ----------------
 
 void ClientCore::setHeartbeatIntervalMs(int intervalMs)
@@ -344,6 +385,13 @@ void ClientCore::onChatInfoRq(const char* data, std::size_t len)
     im::proto::ChatInfoRq rq;
     if (!parsePayload(data, len, rq)) return;
 
+    // 文件卡片单独回调（rq.myid 是发送方）
+    if (rq.type() == im::proto::FILE) {
+        if (auto* ev = m_events.load())
+            ev->onFileCard(rq.myid(), rq.file_id(), rq.file_name(), rq.file_size(), rq.msg_id());
+        return;
+    }
+
     // 图片消息单独回调（rq.myid 是发送方）
     if (rq.type() == im::proto::IMAGE) {
         if (auto* ev = m_events.load()) {
@@ -428,6 +476,33 @@ void ClientCore::onRoamMsgRs(const char* data, std::size_t len)
     if (auto* ev = m_events.load()) {
         ev->onRoamMessages(rs.peer_id(), msgs, rs.has_more(), rs.min_seq());
     }
+}
+
+void ClientCore::onFileOfferRs(const char* data, std::size_t len)
+{
+    im::proto::FileOfferRs rs;
+    if (!parsePayload(data, len, rs)) return;
+    FileOfferInfo info;
+    info.msgId = rs.msg_id();
+    info.fileId = rs.file_id();
+    info.receivedChunks = rs.received_chunks();
+    info.result = rs.result();
+    if (auto* ev = m_events.load()) ev->onFileOfferResult(info);
+}
+
+void ClientCore::onFileChunkRq(const char* data, std::size_t len)
+{
+    im::proto::FileChunkRq rq;
+    if (!parsePayload(data, len, rq)) return;
+    if (auto* ev = m_events.load()) ev->onFileChunk(rq.file_id(), rq.chunk_index(), rq.data());
+}
+
+void ClientCore::onFileProgressRs(const char* data, std::size_t len)
+{
+    im::proto::FileProgressRs rs;
+    if (!parsePayload(data, len, rs)) return;
+    if (auto* ev = m_events.load())
+        ev->onFileProgress(rs.file_id(), rs.received_chunks(), rs.total_chunks(), rs.status());
 }
 
 } // namespace im

@@ -107,7 +107,9 @@ bool Database::open(const std::string& dbPath, int poolSize)
         "  ts INTEGER NOT NULL,"
         "  is_delivered INTEGER NOT NULL DEFAULT 0,"
         "  is_read INTEGER NOT NULL DEFAULT 0,"
-        "  seq INTEGER NOT NULL DEFAULT 0"
+        "  seq INTEGER NOT NULL DEFAULT 0,"
+        "  file_id TEXT,"
+        "  file_size INTEGER NOT NULL DEFAULT 0"
         ");"
         "CREATE INDEX IF NOT EXISTS idx_msg_conv_ts ON messages(conversation_id, ts);"
         "CREATE INDEX IF NOT EXISTS idx_msg_conv_seq ON messages(conversation_id, seq);"
@@ -341,8 +343,8 @@ bool Database::saveMessage(StoredMessage& m, bool delivered)
     // msg_id UNIQUE + INSERT OR IGNORE：漫游/重发幂等
     sqlite3_prepare_v2(c.db,
         "INSERT OR IGNORE INTO messages"
-        "(msg_id, conversation_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, is_delivered, is_read, seq)"
-        " VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?);",
+        "(msg_id, conversation_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, is_delivered, is_read, seq, file_id, file_size)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?,?,?);",
         -1, &st, nullptr);
     sqlite3_bind_text(st, 1, m.msgId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int64(st, 2, convId);
@@ -356,6 +358,8 @@ bool Database::saveMessage(StoredMessage& m, bool delivered)
     sqlite3_bind_int64(st, 10, m.ts);
     sqlite3_bind_int(st, 11, delivered ? 1 : 0);
     sqlite3_bind_int64(st, 12, m.seq);
+    sqlite3_bind_text(st, 13, m.fileId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(st, 14, m.fileSize);
     const bool ok = sqlite3_step(st) == SQLITE_DONE;
     sqlite3_finalize(st);
     return ok;
@@ -369,7 +373,7 @@ std::vector<StoredMessage> Database::pullUndelivered(int receiverId)
 
     sqlite3_stmt* st = nullptr;
     sqlite3_prepare_v2(c.db,
-        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq "
+        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq, file_id, file_size "
         "FROM messages WHERE receiver_id=? AND is_delivered=0 ORDER BY seq ASC;",
         -1, &st, nullptr);
     sqlite3_bind_int(st, 1, receiverId);
@@ -388,6 +392,9 @@ std::vector<StoredMessage> Database::pullUndelivered(int receiverId)
         m.imgH = sqlite3_column_int(st, 7);
         m.ts = sqlite3_column_int64(st, 8);
         m.seq = sqlite3_column_int64(st, 9);
+        const unsigned char* fileId = sqlite3_column_text(st, 10);
+        m.fileId = fileId ? reinterpret_cast<const char*>(fileId) : "";
+        m.fileSize = sqlite3_column_int64(st, 11);
         out.push_back(std::move(m));
     }
     sqlite3_finalize(st);
@@ -411,7 +418,7 @@ void Database::markDelivered(const std::vector<std::string>& msgIds)
 }
 
 // 从结果集当前行装载一条 StoredMessage（列序须与 SELECT 一致：
-// msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq）
+// msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq, file_id, file_size）
 static StoredMessage readMessageRow(sqlite3_stmt* st)
 {
     StoredMessage m;
@@ -428,6 +435,9 @@ static StoredMessage readMessageRow(sqlite3_stmt* st)
     m.imgH = sqlite3_column_int(st, 7);
     m.ts = sqlite3_column_int64(st, 8);
     m.seq = sqlite3_column_int64(st, 9);
+    const unsigned char* fileId = sqlite3_column_text(st, 10);
+    m.fileId = fileId ? reinterpret_cast<const char*>(fileId) : "";
+    m.fileSize = sqlite3_column_int64(st, 11);
     return m;
 }
 
@@ -442,7 +452,7 @@ std::vector<StoredMessage> Database::roamConversations(int userId)
     sqlite3_stmt* st = nullptr;
     sqlite3_prepare_v2(c.db,
         "SELECT m.msg_id, m.sender_id, m.receiver_id, m.type, m.content, m.media_path, "
-        "m.img_w, m.img_h, m.ts, m.seq FROM messages m JOIN ("
+        "m.img_w, m.img_h, m.ts, m.seq, m.file_id, m.file_size FROM messages m JOIN ("
         "  SELECT conversation_id, MAX(id) AS mid FROM ("
         "    SELECT conversation_id, id FROM messages WHERE sender_id=?"
         "    UNION ALL"
@@ -468,7 +478,7 @@ std::vector<StoredMessage> Database::roamMessages(int userId, int peerId, std::i
     // 会话内比游标更早的 N 条（seq 倒序），走 idx_msg_conv_seq
     sqlite3_stmt* st = nullptr;
     sqlite3_prepare_v2(c.db,
-        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq "
+        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq, file_id, file_size "
         "FROM messages WHERE conversation_id=? AND seq < ? ORDER BY seq DESC LIMIT ?;",
         -1, &st, nullptr);
     sqlite3_bind_int64(st, 1, convId);
@@ -477,6 +487,40 @@ std::vector<StoredMessage> Database::roamMessages(int userId, int peerId, std::i
     while (sqlite3_step(st) == SQLITE_ROW) out.push_back(readMessageRow(st));
     sqlite3_finalize(st);
     return out;
+}
+
+bool Database::getMessageByMsgId(const std::string& msgId, StoredMessage& out)
+{
+    Conn& c = acquire();
+    std::lock_guard<std::mutex> lock(c.mtx);
+    sqlite3_stmt* st = nullptr;
+    sqlite3_prepare_v2(c.db,
+        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq, file_id, file_size "
+        "FROM messages WHERE msg_id=?;",
+        -1, &st, nullptr);
+    sqlite3_bind_text(st, 1, msgId.c_str(), -1, SQLITE_TRANSIENT);
+    bool ok = false;
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        const unsigned char* mid = sqlite3_column_text(st, 0);
+        out.msgId = mid ? reinterpret_cast<const char*>(mid) : "";
+        out.senderId = sqlite3_column_int(st, 1);
+        out.receiverId = sqlite3_column_int(st, 2);
+        out.type = sqlite3_column_int(st, 3);
+        const unsigned char* content = sqlite3_column_text(st, 4);
+        const unsigned char* path = sqlite3_column_text(st, 5);
+        out.content = content ? reinterpret_cast<const char*>(content) : "";
+        out.mediaPath = path ? reinterpret_cast<const char*>(path) : "";
+        out.imgW = sqlite3_column_int(st, 6);
+        out.imgH = sqlite3_column_int(st, 7);
+        out.ts = sqlite3_column_int64(st, 8);
+        out.seq = sqlite3_column_int64(st, 9);
+        const unsigned char* fid = sqlite3_column_text(st, 10);
+        out.fileId = fid ? reinterpret_cast<const char*>(fid) : "";
+        out.fileSize = sqlite3_column_int64(st, 11);
+        ok = true;
+    }
+    sqlite3_finalize(st);
+    return ok;
 }
 
 } // namespace imsrv

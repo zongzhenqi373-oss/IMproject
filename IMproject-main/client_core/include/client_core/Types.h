@@ -46,4 +46,12 @@ struct RoamMessage {
     std::int64_t seq = 0;   // 会话级序列号
 };
 
+// 文件协商结果（含断点续传水位线）
+struct FileOfferInfo {
+    std::string msgId;
+    std::string fileId;
+    int receivedChunks = 0; // 水位线 N
+    int result = 0;         // proto::FILE_OFFER_OK / FILE_OFFER_TOO_LARGE
+};
+
 } // namespace im
