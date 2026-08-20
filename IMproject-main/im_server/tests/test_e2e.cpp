@@ -389,6 +389,24 @@ int main()
         return eb3.downloadChunks.size() == 1 && eb3.downloadChunks[0].first == 1;
     }));
 
+    // ============ M7 边界：超限 + sha256 校验 ============
+
+    // 超限：声明 101MB → 拒绝
+    ea2.gotOffer = false;
+    a2.sendFileOffer("file-toolarge", idB, "big.bin", 101LL*1024*1024, 999, "deadbeef");
+    assert(ea2.waitFor([&] { return ea2.gotOffer && ea2.lastOffer.msgId == "file-toolarge"; }));
+    assert(ea2.lastOffer.result == FILE_OFFER_TOO_LARGE);
+
+    // sha256 不符：发正确字节但 Offer 声明错误 sha → Complete 应 failed
+    const std::string fmsgId3 = "file-badsha";
+    std::string data3(1024, 'Z');
+    ea2.gotOffer = false; ea2.lastProgressStatus = -1;
+    a2.sendFileOffer(fmsgId3, idB, "bad.bin", (std::int64_t)data3.size(), 1, "0000000000000000000000000000000000000000000000000000000000000000");
+    assert(ea2.waitFor([&] { return ea2.gotOffer && ea2.lastOffer.msgId == fmsgId3; }));
+    a2.sendFileChunk(fmsgId3, 0, data3);
+    a2.sendFileComplete(fmsgId3, fmsgId3);
+    assert(ea2.waitFor([&] { return ea2.lastProgressStatus == FILE_ST_FAILED; }));
+
     a2.disconnect();
     b3.disconnect();
     server.stop();
