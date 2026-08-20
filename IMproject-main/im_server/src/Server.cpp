@@ -40,6 +40,21 @@ bool Server::start()
     std::filesystem::create_directories(m_uploadDir + "/file", ec);
     std::filesystem::create_directories(m_uploadDir + "/file/tmp", ec);
 
+    // 清理超 24h 未完成的半成品 .part（断点续传窗口外）
+    {
+        std::error_code ec;
+        const auto tmpDir = std::filesystem::path(m_uploadDir) / "file" / "tmp";
+        if (std::filesystem::exists(tmpDir, ec)) {
+            const auto now = std::filesystem::file_time_type::clock::now();
+            for (auto& e : std::filesystem::directory_iterator(tmpDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                auto mtime = std::filesystem::last_write_time(e, ec);
+                if (!ec && (now - mtime) > std::chrono::hours(24))
+                    std::filesystem::remove(e.path(), ec);
+            }
+        }
+    }
+
     if (!m_db.open(m_dbPath, m_dbWorkers)) {
         log("[server] 打开数据库失败: ", m_dbPath);
         return false;
