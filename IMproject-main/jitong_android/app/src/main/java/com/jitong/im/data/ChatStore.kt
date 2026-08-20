@@ -59,6 +59,10 @@ class ChatStore(context: Context) {
             db.messageDao().updateSeq(ownerId, msgId, seq)
         }
 
+    /** 文件下载完成后写入最终本地路径 */
+    suspend fun updateFileLocalPath(ownerId: Int, fileId: String, path: String) =
+        withContext(Dispatchers.IO) { db.messageDao().updateLocalPath(ownerId, fileId, path) }
+
     suspend fun clearUnread(ownerId: Int, peerId: Int) = withContext(Dispatchers.IO) {
         db.conversationDao().clearUnread(conversationId(ownerId, peerId))
     }

@@ -257,6 +257,9 @@ class MainViewModel : ViewModel() {
     @Volatile private var appResolver: android.content.ContentResolver? = null
     fun attachResolver(r: android.content.ContentResolver) { appResolver = r }
 
+    @Volatile private var appContext: android.content.Context? = null
+    fun attachContext(ctx: android.content.Context) { appContext = ctx.applicationContext }
+
     fun sendFile(uri: android.net.Uri, resolver: android.content.ContentResolver) {
         val peer = _chatPeer.value ?: return
         val (name, size) = queryNameSize(resolver, uri) ?: return
@@ -284,6 +287,25 @@ class MainViewModel : ViewModel() {
             }
         }
         return null
+    }
+
+    // ---------------- 文件接收（接收方状态机 + 断点续传） ----------------
+
+    /** 进行中的下载：fileId -> 落盘中的 .part 文件信息 */
+    private data class Download(val peerId: Int, val fileId: String, val name: String, val size: Long,
+                                val out: java.io.OutputStream, val partFile: java.io.File)
+    private val downloads = mutableMapOf<String, Download>()
+
+    /** 用户点击下载：从本地已有的 .part 大小推算续传起点，向服务端请求剩余分片 */
+    fun downloadFile(msg: ChatMessage) {
+        val ctx = appContext ?: return
+        val dir = java.io.File(ctx.filesDir, "file").apply { mkdirs() }
+        val part = java.io.File(dir, "${msg.fileId}_${msg.fileName}.part")
+        val fromChunk = (part.length() / Protocol.FILE_CHUNK_SIZE).toInt()
+        val out = java.io.FileOutputStream(part, /*append=*/true)
+        downloads[msg.fileId] = Download(msg.peerId, msg.fileId, msg.fileName, msg.fileSize, out, part)
+        updateFileStatus(msg.peerId, msg.msgId, ChatMessage.Status.SENDING) // 复用"进行中"
+        viewModelScope.launch { client.fileDownload(msg.fileId, fromChunk) }
     }
 
     // ---------------- 事件归集 ----------------
@@ -480,7 +502,12 @@ class MainViewModel : ViewModel() {
                         }
                     }
                 }
-                is ImClient.Event.FileChunk -> Unit
+                is ImClient.Event.FileChunk -> {
+                    val d = downloads[e.fileId] ?: return@collect
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { d.out.write(e.data); d.out.flush() }
+                    val chunks = (d.partFile.length() / Protocol.FILE_CHUNK_SIZE).toInt()
+                    updateFileProgress(d.peerId, e.fileId, chunks)
+                }
                 is ImClient.Event.FileProgress -> {
                     val up = uploads[e.fileId]
                     if (up != null) {
@@ -493,11 +520,16 @@ class MainViewModel : ViewModel() {
                             updateFileProgress(up.peerId, e.fileId, e.received)
                         }
                     } else {
-                        // 下载进度（接收方），见 Task 12
+                        // 下载进度（接收方）
                         onDownloadProgress(e)
                     }
                 }
-                is ImClient.Event.FileCard -> Unit
+                is ImClient.Event.FileCard -> {
+                    val inChat = _screen.value == Screen.Chat && _chatPeer.value?.id == e.fromId
+                    append(ChatMessage(e.msgId, e.fromId, fromMe = false, kind = MsgKind.FILE,
+                        fileId = e.fileId, fileName = e.name, fileSize = e.size, ts = e.ts, seq = e.seq,
+                        status = ChatMessage.Status.RECEIVED), incrUnread = !inChat)
+                }
             }
         }
     }
@@ -600,8 +632,27 @@ class MainViewModel : ViewModel() {
             if (it.msgId == msgId) it.copy(transferred = transferred) else it })
     }
 
-    /** 接收方下载进度占位：M7 Task 12 实现 */
-    private fun onDownloadProgress(e: ImClient.Event.FileProgress) {}
+    /** 接收方下载进度：DONE 时 .part 落地为最终文件并写回 Room；FAILED 时清理并提示 */
+    private fun onDownloadProgress(e: ImClient.Event.FileProgress) {
+        val d = downloads[e.fileId] ?: return
+        if (e.status == Protocol.FILE_ST_DONE) {
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { d.out.close() }
+                val ctx = appContext ?: return@launch
+                val finalFile = java.io.File(java.io.File(ctx.filesDir, "file"), "${d.fileId}_${d.name}")
+                d.partFile.renameTo(finalFile)
+                store?.updateFileLocalPath(client.myId, d.fileId, finalFile.absolutePath)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    val conv = _messages.value[d.peerId] ?: return@withContext
+                    _messages.value = _messages.value + (d.peerId to conv.map {
+                        if (it.fileId == d.fileId) it.copy(localPath = finalFile.absolutePath, status = ChatMessage.Status.RECEIVED) else it })
+                }
+                downloads.remove(d.fileId)
+            }
+        } else if (e.status == Protocol.FILE_ST_FAILED) {
+            runCatching { d.out.close() }; downloads.remove(e.fileId); notify("文件已失效")
+        }
+    }
 
     /**
      * 断线自动重连（指数退避）：弱网/瞬断时自愈，不打断用户停留在会话页。

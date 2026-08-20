@@ -32,6 +32,7 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(Unit) {
                     vm.attachStore(ChatStore(appContext))
                     vm.attachResolver(appContext.contentResolver)
+                    vm.attachContext(appContext)
                 }
                 AppNav(vm)
             }

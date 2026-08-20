@@ -36,6 +36,9 @@ interface MessageDao {
     @Query("UPDATE messages SET seq = :seq WHERE ownerId = :ownerId AND msgId = :msgId")
     suspend fun updateSeq(ownerId: Int, msgId: String, seq: Long)
 
+    @Query("UPDATE messages SET localPath = :path WHERE ownerId = :ownerId AND fileId = :fileId")
+    suspend fun updateLocalPath(ownerId: Int, fileId: String, path: String)
+
     /** FTS 前缀匹配（simple 分词：英文按词、中文整串前缀） */
     @Query(
         """SELECT m.* FROM messages m JOIN messages_fts f ON m.msgId = f.msgId
