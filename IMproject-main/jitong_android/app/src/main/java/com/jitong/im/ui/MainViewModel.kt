@@ -45,7 +45,7 @@ data class ChatMessage(
     val transferred: Int = 0,
     val status: Status = Status.RECEIVED,
 ) {
-    enum class Status { SENDING, DELIVERED, OFFLINE_STORED, RECEIVED }
+    enum class Status { SENDING, DELIVERED, OFFLINE_STORED, RECEIVED, FAILED }
 }
 
 class MainViewModel : ViewModel() {
@@ -554,11 +554,19 @@ class MainViewModel : ViewModel() {
                     val up = uploads[e.fileId]
                     if (up != null) {
                         if (e.status == Protocol.FILE_ST_DONE) {
-                            updateFileStatus(up.peerId, e.fileId, ChatMessage.Status.DELIVERED)
+                            // 文件完成响应携带服务端会话 seq；与文本/图片回执一样校正排序键。
+                            // 否则文件卡片会一直保持 seq=0，被 sortBySeq 永久放在会话末尾。
+                            updateStatus(
+                                up.peerId,
+                                e.fileId,
+                                if (e.delivered) ChatMessage.Status.DELIVERED
+                                else ChatMessage.Status.OFFLINE_STORED,
+                                e.seq,
+                            )
                             uploads.remove(e.fileId)
                         } else if (e.status == Protocol.FILE_ST_FAILED) {
                             // I3: 失败后把卡片从"进行中"恢复为非发送中态，避免永远停在进度条
-                            updateFileStatus(up.peerId, e.fileId, ChatMessage.Status.OFFLINE_STORED)
+                            updateFileStatus(up.peerId, e.fileId, ChatMessage.Status.FAILED)
                             notify("文件发送失败"); uploads.remove(e.fileId)
                         } else {
                             updateFileProgress(up.peerId, e.fileId, e.received)

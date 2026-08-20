@@ -49,6 +49,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -261,7 +262,7 @@ private fun MessageRow(msg: ChatMessage, peerNick: String, myNick: String, myId:
                 // 文件消息气泡：图标 + 名称 + 大小 + 进度/下载/打开
                 MsgKind.FILE -> FileBubble(msg, onDownload = { vm.downloadFile(msg) }, onOpen = {
                     msg.localPath?.let { openFile(context, it, msg.fileName) }
-                })
+                }, onRetry = { vm.retryFile(msg) })
             }
             if (msg.fromMe) {
                 Text(
@@ -269,6 +270,7 @@ private fun MessageRow(msg: ChatMessage, peerNick: String, myNick: String, myId:
                         ChatMessage.Status.SENDING -> "发送中…"
                         ChatMessage.Status.DELIVERED -> "已送达"
                         ChatMessage.Status.OFFLINE_STORED -> "对方离线，已转存"
+                        ChatMessage.Status.FAILED -> "发送失败，点击重试"
                         ChatMessage.Status.RECEIVED -> ""
                     },
                     fontSize = 10.sp,
@@ -284,37 +286,75 @@ private fun MessageRow(msg: ChatMessage, peerNick: String, myNick: String, myId:
 }
 
 /**
- * 文件消息气泡：图标+文件名+大小+进度/操作提示。
+ * 固定尺寸文件卡片：左侧文件图标，右侧文件名及大小/操作状态。
  *
  * 下载防重入：downloadFile 内部对 .part 文件用追加流写入，无二次点击去重逻辑，
  * 因此这里在 UI 层做守卫——仅当"未下载 且 非下载中（status != SENDING）"时才允许触发 onDownload，
  * 下载中（对方视角复用 SENDING 表示"进行中"）点击直接忽略，避免并发打开第二个追加流。
  */
 @Composable
-private fun FileBubble(msg: ChatMessage, onDownload: () -> Unit, onOpen: () -> Unit) {
+private fun FileBubble(msg: ChatMessage, onDownload: () -> Unit, onOpen: () -> Unit, onRetry: () -> Unit) {
     val downloaded = msg.localPath != null && !msg.localPath!!.endsWith(".part")
     val downloading = msg.status == ChatMessage.Status.SENDING
-    Column(
-        Modifier.widthIn(max = 260.dp)
+    val failed = msg.fromMe && msg.status == ChatMessage.Status.FAILED
+    val total = ((msg.fileSize + FILE_CHUNK - 1) / FILE_CHUNK).toInt().coerceAtLeast(1)
+    val progress = (msg.transferred * 100 / total).coerceIn(0, 100)
+    val actionText = when {
+        downloading -> "传输中 $progress%"
+        failed -> "点击重试"
+        downloaded -> "点击打开"
+        !msg.fromMe -> "点击下载"
+        else -> "已发送"
+    }
+    val actionColor = when {
+        failed -> Color(0xFFD93025)
+        downloaded || !msg.fromMe -> Color(0xFF07C160)
+        else -> Color.Gray
+    }
+
+    Row(
+        Modifier
+            .width(260.dp)
+            .height(76.dp)
             .background(if (msg.fromMe) Color(0xFF95EC69) else Color.White, RoundedCornerShape(8.dp))
             .clickable {
                 when {
+                    failed -> onRetry()
                     downloaded -> onOpen()
                     !msg.fromMe && !downloading -> onDownload()
                     // 下载中或己方发送记录：忽略点击，防止重复下载/无意义交互
                 }
             }
             .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("📄 ${msg.fileName}", fontSize = 14.sp)
-        Text(humanSize(msg.fileSize), fontSize = 11.sp, color = Color.Gray)
-        val total = ((msg.fileSize + FILE_CHUNK - 1) / FILE_CHUNK).toInt().coerceAtLeast(1)
-        when {
-            downloading ->
-                Text("${(msg.transferred * 100 / total)}%", fontSize = 11.sp, color = Color.Gray)
-            downloaded -> Text("点击打开", fontSize = 11.sp, color = Color(0xFF07C160))
-            !msg.fromMe -> Text("点击下载", fontSize = 11.sp, color = Color(0xFF07C160))
-            else -> Text("已发送", fontSize = 11.sp, color = Color.Gray)
+        Box(
+            Modifier
+                .size(48.dp)
+                .background(Color.White.copy(alpha = 0.72f), RoundedCornerShape(8.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("📄", fontSize = 27.sp)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(
+            Modifier.weight(1f),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = msg.fileName.ifBlank { "未命名文件" },
+                fontSize = 14.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(5.dp))
+            Text(
+                text = "${humanSize(msg.fileSize)} · $actionText",
+                fontSize = 11.sp,
+                color = actionColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -326,13 +366,22 @@ private fun humanSize(b: Long): String = when {
     else -> "$b B"
 }
 private fun openFile(context: android.content.Context, path: String, name: String) {
-    val file = java.io.File(path)
-    val uri = androidx.core.content.FileProvider.getUriForFile(context, "com.jitong.im.fileprovider", file)
-    val mime = context.contentResolver.getType(uri) ?: "*/*"
-    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
-        .setDataAndType(uri, mime)
-        .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    runCatching { context.startActivity(intent) }
+    runCatching {
+        val uri = if (path.startsWith("content://")) {
+            android.net.Uri.parse(path)
+        } else {
+            androidx.core.content.FileProvider.getUriForFile(
+                context, "${context.packageName}.fileprovider", java.io.File(path),
+            )
+        }
+        val mime = context.contentResolver.getType(uri)
+            ?: java.net.URLConnection.guessContentTypeFromName(name)
+            ?: "*/*"
+        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
+            .setDataAndType(uri, mime)
+            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        context.startActivity(intent)
+    }
         .onFailure { android.widget.Toast.makeText(context, "无可打开该文件的应用", android.widget.Toast.LENGTH_SHORT).show() }
 }
 

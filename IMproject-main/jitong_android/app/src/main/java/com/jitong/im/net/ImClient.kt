@@ -80,7 +80,14 @@ class ImClient {
 
         data class FileOfferResult(val msgId: String, val fileId: String, val receivedChunks: Int, val result: Int) : Event
         data class FileChunk(val fileId: String, val chunkIndex: Int, val data: ByteArray) : Event
-        data class FileProgress(val fileId: String, val received: Int, val total: Int, val status: Int) : Event
+        data class FileProgress(
+            val fileId: String,
+            val received: Int,
+            val total: Int,
+            val status: Int,
+            val seq: Long,
+            val delivered: Boolean,
+        ) : Event
         data class FileCard(val fromId: Int, val fileId: String, val name: String, val size: Long, val msgId: String, val ts: Long, val seq: Long) : Event
 
         data class FriendOffline(val userId: Int) : Event
@@ -335,7 +342,9 @@ class ImClient {
             }
             Protocol.FILE_PROGRESS_RS -> {
                 val rs = Im.FileProgressRs.parseFrom(f.payload)
-                _events.emit(Event.FileProgress(rs.fileId, rs.receivedChunks, rs.totalChunks, rs.status))
+                _events.emit(Event.FileProgress(
+                    rs.fileId, rs.receivedChunks, rs.totalChunks, rs.status, rs.seq, rs.delivered,
+                ))
             }
 
             Protocol.FRIEND_OFFLINE ->

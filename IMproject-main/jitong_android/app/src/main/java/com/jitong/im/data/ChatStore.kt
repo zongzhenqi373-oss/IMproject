@@ -116,7 +116,9 @@ class ChatStore(context: Context) {
             status = when (status) {
                 0 -> ChatMessage.Status.SENDING
                 1 -> ChatMessage.Status.DELIVERED
+                2 -> ChatMessage.Status.RECEIVED
                 3 -> ChatMessage.Status.OFFLINE_STORED
+                4 -> ChatMessage.Status.FAILED
                 else -> ChatMessage.Status.RECEIVED
             },
         )
@@ -144,6 +146,7 @@ class ChatStore(context: Context) {
         ChatMessage.Status.DELIVERED -> 1
         ChatMessage.Status.RECEIVED -> 2
         ChatMessage.Status.OFFLINE_STORED -> 3
+        ChatMessage.Status.FAILED -> 4
     }
 
     companion object {
