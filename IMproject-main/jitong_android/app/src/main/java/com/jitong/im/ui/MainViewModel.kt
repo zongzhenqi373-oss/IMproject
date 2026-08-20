@@ -174,6 +174,9 @@ class MainViewModel : ViewModel() {
             if (minSeq != null) {
                 loadedMinSeq[friend.id] = minSeq
                 roamHasMore[friend.id] = true // 未知，允许尝试上拉；服务端返回空批会置 false
+            } else {
+                // 本地全是 seq=0 的旧版/未确认消息：拉最新一页重建游标（服务端批次带回 seq）
+                requestHistory(friend.id, Long.MAX_VALUE)
             }
         }
     }
@@ -263,6 +266,7 @@ class MainViewModel : ViewModel() {
     fun sendFile(uri: android.net.Uri, resolver: android.content.ContentResolver) {
         val peer = _chatPeer.value ?: return
         val (name, size) = queryNameSize(resolver, uri) ?: return
+        if (size <= 0) { notify("空文件无法发送"); return }
         if (size > Protocol.FILE_MAX_SIZE) { notify("文件超过 100MB"); return }
         val msgId = java.util.UUID.randomUUID().toString()
         val totalChunks = ((size + Protocol.FILE_CHUNK_SIZE - 1) / Protocol.FILE_CHUNK_SIZE).toInt()
@@ -271,8 +275,17 @@ class MainViewModel : ViewModel() {
             fileId = msgId, fileName = name, fileSize = size, localPath = uri.toString(),
             status = ChatMessage.Status.SENDING), incrUnread = false)
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val sha = resolver.openInputStream(uri)!!.use { com.jitong.im.net.sha256HexOfStream(it) }
-            client.fileOffer(msgId, peer.id, name, size, totalChunks, sha)
+            runCatching {
+                val ins = resolver.openInputStream(uri)
+                if (ins == null) {
+                    notify("无法读取文件"); updateFileStatus(peer.id, msgId, ChatMessage.Status.OFFLINE_STORED)
+                    return@launch
+                }
+                val sha = ins.use { com.jitong.im.net.sha256HexOfStream(it) }
+                client.fileOffer(msgId, peer.id, name, size, totalChunks, sha)
+            }.onFailure {
+                notify("文件读取失败"); updateFileStatus(peer.id, msgId, ChatMessage.Status.OFFLINE_STORED)
+            }
         }
     }
 
@@ -301,6 +314,26 @@ class MainViewModel : ViewModel() {
         val ctx = appContext ?: return
         val dir = java.io.File(ctx.filesDir, "file").apply { mkdirs() }
         val part = java.io.File(dir, "${msg.fileId}_${msg.fileName}.part")
+        // I1（客户端对称修复）：.part 已经等于 fileSize 说明上次已经收完全部字节，只是没来得及
+        // 落地为最终文件（比如中途被杀）。此时不应再请求下载（会重复追加末块导致 partSize 越界），
+        // 直接把 .part 落地为最终文件即可。
+        if (msg.fileSize > 0 && part.length() >= msg.fileSize) {
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val finalFile = java.io.File(dir, "${msg.fileId}_${msg.fileName}")
+                val ok = runCatching { part.renameTo(finalFile) }.getOrDefault(false)
+                if (ok) {
+                    store?.updateFileLocalPath(client.myId, msg.fileId, finalFile.absolutePath)
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        val conv = _messages.value[msg.peerId] ?: return@withContext
+                        _messages.value = _messages.value + (msg.peerId to conv.map {
+                            if (it.fileId == msg.fileId) it.copy(localPath = finalFile.absolutePath, status = ChatMessage.Status.RECEIVED) else it })
+                    }
+                } else {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { notify("文件保存失败") }
+                }
+            }
+            return
+        }
         val fromChunk = (part.length() / Protocol.FILE_CHUNK_SIZE).toInt()
         val out = java.io.FileOutputStream(part, /*append=*/true)
         downloads[msg.fileId] = Download(msg.peerId, msg.fileId, msg.fileName, msg.fileSize, out, part)
@@ -487,18 +520,27 @@ class MainViewModel : ViewModel() {
                     }
                     val resolver = appResolver ?: return@collect
                     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                        resolver.openInputStream(up.uri)!!.use { ins ->
-                            var idx = 0
-                            val buf = ByteArray(Protocol.FILE_CHUNK_SIZE)
-                            // 跳过已发送的 e.receivedChunks 块（断点续传）
-                            var skip = e.receivedChunks.toLong() * Protocol.FILE_CHUNK_SIZE
-                            while (skip > 0) { val s = ins.skip(skip); if (s <= 0) break; skip -= s }
-                            idx = e.receivedChunks
-                            while (true) {
-                                val n = ins.read(buf); if (n < 0) break
-                                client.fileChunk(e.fileId, idx, buf.copyOf(n)); idx++
+                        runCatching {
+                            val ins = resolver.openInputStream(up.uri)
+                            if (ins == null) {
+                                notify("无法读取文件"); updateFileStatus(up.peerId, e.msgId, ChatMessage.Status.OFFLINE_STORED)
+                                return@launch
                             }
-                            client.fileComplete(e.fileId, e.msgId)
+                            ins.use { s ->
+                                var idx = 0
+                                val buf = ByteArray(Protocol.FILE_CHUNK_SIZE)
+                                // 跳过已发送的 e.receivedChunks 块（断点续传）
+                                var skip = e.receivedChunks.toLong() * Protocol.FILE_CHUNK_SIZE
+                                while (skip > 0) { val sk = s.skip(skip); if (sk <= 0) break; skip -= sk }
+                                idx = e.receivedChunks
+                                while (true) {
+                                    val n = s.read(buf); if (n < 0) break
+                                    client.fileChunk(e.fileId, idx, buf.copyOf(n)); idx++
+                                }
+                                client.fileComplete(e.fileId, e.msgId)
+                            }
+                        }.onFailure {
+                            notify("文件发送失败"); updateFileStatus(up.peerId, e.msgId, ChatMessage.Status.OFFLINE_STORED)
                         }
                     }
                 }
@@ -515,6 +557,8 @@ class MainViewModel : ViewModel() {
                             updateFileStatus(up.peerId, e.fileId, ChatMessage.Status.DELIVERED)
                             uploads.remove(e.fileId)
                         } else if (e.status == Protocol.FILE_ST_FAILED) {
+                            // I3: 失败后把卡片从"进行中"恢复为非发送中态，避免永远停在进度条
+                            updateFileStatus(up.peerId, e.fileId, ChatMessage.Status.OFFLINE_STORED)
                             notify("文件发送失败"); uploads.remove(e.fileId)
                         } else {
                             updateFileProgress(up.peerId, e.fileId, e.received)
@@ -657,6 +701,8 @@ class MainViewModel : ViewModel() {
             }
         } else if (e.status == Protocol.FILE_ST_FAILED) {
             runCatching { d.out.close() }; downloads.remove(e.fileId); notify("文件已失效")
+            // I3: 接收方 msgId == fileId；恢复为 RECEIVED（"点击下载"）以支持重试，不留在"进行中"
+            updateFileStatus(d.peerId, d.fileId, ChatMessage.Status.RECEIVED)
         }
     }
 

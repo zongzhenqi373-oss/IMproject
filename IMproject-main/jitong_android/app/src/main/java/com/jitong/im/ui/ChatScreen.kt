@@ -333,6 +333,7 @@ private fun openFile(context: android.content.Context, path: String, name: Strin
         .setDataAndType(uri, mime)
         .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
     runCatching { context.startActivity(intent) }
+        .onFailure { android.widget.Toast.makeText(context, "无可打开该文件的应用", android.widget.Toast.LENGTH_SHORT).show() }
 }
 
 @Composable
