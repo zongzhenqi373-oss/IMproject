@@ -248,6 +248,44 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch { _toast.emit(msg) }
     }
 
+    // ---------------- 文件发送（发送方状态机 + 断点续传） ----------------
+
+    /** 进行中的上传：fileId -> 待发字节源信息 */
+    private data class Upload(val uri: android.net.Uri, val peerId: Int, val name: String, val size: Long, val totalChunks: Int)
+    private val uploads = mutableMapOf<String, Upload>()
+
+    @Volatile private var appResolver: android.content.ContentResolver? = null
+    fun attachResolver(r: android.content.ContentResolver) { appResolver = r }
+
+    fun sendFile(uri: android.net.Uri, resolver: android.content.ContentResolver) {
+        val peer = _chatPeer.value ?: return
+        val (name, size) = queryNameSize(resolver, uri) ?: return
+        if (size > Protocol.FILE_MAX_SIZE) { notify("文件超过 100MB"); return }
+        val msgId = java.util.UUID.randomUUID().toString()
+        val totalChunks = ((size + Protocol.FILE_CHUNK_SIZE - 1) / Protocol.FILE_CHUNK_SIZE).toInt()
+        uploads[msgId] = Upload(uri, peer.id, name, size, totalChunks)
+        append(ChatMessage(msgId, peer.id, fromMe = true, kind = MsgKind.FILE,
+            fileId = msgId, fileName = name, fileSize = size, localPath = uri.toString(),
+            status = ChatMessage.Status.SENDING), incrUnread = false)
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val sha = resolver.openInputStream(uri)!!.use { com.jitong.im.net.sha256HexOfStream(it) }
+            client.fileOffer(msgId, peer.id, name, size, totalChunks, sha)
+        }
+    }
+
+    private fun queryNameSize(resolver: android.content.ContentResolver, uri: android.net.Uri): Pair<String, Long>? {
+        resolver.query(uri, null, null, null, null)?.use { c ->
+            val ni = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            val si = c.getColumnIndex(android.provider.OpenableColumns.SIZE)
+            if (c.moveToFirst()) {
+                val name = if (ni >= 0) c.getString(ni) else "file"
+                val size = if (si >= 0) c.getLong(si) else -1L
+                if (size >= 0) return name to size
+            }
+        }
+        return null
+    }
+
     // ---------------- 事件归集 ----------------
 
     private suspend fun collectEvents() {
@@ -418,10 +456,47 @@ class MainViewModel : ViewModel() {
                     expectDisconnect = false
                 }
 
-                // 文件收发状态机由 M7 Task 11/12 实现，此处占位避免 when 不穷尽
-                is ImClient.Event.FileOfferResult -> Unit
+                // 文件发送方状态机（M7 Task 11）：FileChunk/FileCard 为接收方逻辑，留给 Task 12
+                is ImClient.Event.FileOfferResult -> {
+                    val up = uploads[e.msgId] ?: return@collect
+                    if (e.result != Protocol.FILE_OFFER_OK) {
+                        updateFileStatus(up.peerId, e.msgId, ChatMessage.Status.OFFLINE_STORED) // 复用"失败"展示
+                        notify("文件被拒绝（超限）"); uploads.remove(e.msgId); return@collect
+                    }
+                    val resolver = appResolver ?: return@collect
+                    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                        resolver.openInputStream(up.uri)!!.use { ins ->
+                            var idx = 0
+                            val buf = ByteArray(Protocol.FILE_CHUNK_SIZE)
+                            // 跳过已发送的 e.receivedChunks 块（断点续传）
+                            var skip = e.receivedChunks.toLong() * Protocol.FILE_CHUNK_SIZE
+                            while (skip > 0) { val s = ins.skip(skip); if (s <= 0) break; skip -= s }
+                            idx = e.receivedChunks
+                            while (true) {
+                                val n = ins.read(buf); if (n < 0) break
+                                client.fileChunk(e.fileId, idx, buf.copyOf(n)); idx++
+                            }
+                            client.fileComplete(e.fileId, e.msgId)
+                        }
+                    }
+                }
                 is ImClient.Event.FileChunk -> Unit
-                is ImClient.Event.FileProgress -> Unit
+                is ImClient.Event.FileProgress -> {
+                    val up = uploads[e.fileId]
+                    if (up != null) {
+                        if (e.status == Protocol.FILE_ST_DONE) {
+                            updateFileStatus(up.peerId, e.fileId, ChatMessage.Status.DELIVERED)
+                            uploads.remove(e.fileId)
+                        } else if (e.status == Protocol.FILE_ST_FAILED) {
+                            notify("文件发送失败"); uploads.remove(e.fileId)
+                        } else {
+                            updateFileProgress(up.peerId, e.fileId, e.received)
+                        }
+                    } else {
+                        // 下载进度（接收方），见 Task 12
+                        onDownloadProgress(e)
+                    }
+                }
                 is ImClient.Event.FileCard -> Unit
             }
         }
@@ -512,6 +587,21 @@ class MainViewModel : ViewModel() {
             if (seq > 0) store?.updateSeq(client.myId, msgId, seq)
         }
     }
+
+    private fun updateFileStatus(peerId: Int, msgId: String, status: ChatMessage.Status) {
+        val conv = _messages.value[peerId] ?: return
+        _messages.value = _messages.value + (peerId to conv.map {
+            if (it.msgId == msgId) it.copy(status = status) else it })
+        viewModelScope.launch { store?.updateStatus(client.myId, msgId, status) }
+    }
+    private fun updateFileProgress(peerId: Int, msgId: String, transferred: Int) {
+        val conv = _messages.value[peerId] ?: return
+        _messages.value = _messages.value + (peerId to conv.map {
+            if (it.msgId == msgId) it.copy(transferred = transferred) else it })
+    }
+
+    /** 接收方下载进度占位：M7 Task 12 实现 */
+    private fun onDownloadProgress(e: ImClient.Event.FileProgress) {}
 
     /**
      * 断线自动重连（指数退避）：弱网/瞬断时自愈，不打断用户停留在会话页。
