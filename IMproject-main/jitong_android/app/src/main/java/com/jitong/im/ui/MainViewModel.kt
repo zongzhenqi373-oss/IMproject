@@ -417,6 +417,12 @@ class MainViewModel : ViewModel() {
                     }
                     expectDisconnect = false
                 }
+
+                // 文件收发状态机由 M7 Task 11/12 实现，此处占位避免 when 不穷尽
+                is ImClient.Event.FileOfferResult -> Unit
+                is ImClient.Event.FileChunk -> Unit
+                is ImClient.Event.FileProgress -> Unit
+                is ImClient.Event.FileCard -> Unit
             }
         }
     }

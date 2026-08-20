@@ -78,6 +78,11 @@ class ImClient {
             val minSeq: Long,
         ) : Event
 
+        data class FileOfferResult(val msgId: String, val fileId: String, val receivedChunks: Int, val result: Int) : Event
+        data class FileChunk(val fileId: String, val chunkIndex: Int, val data: ByteArray) : Event
+        data class FileProgress(val fileId: String, val received: Int, val total: Int, val status: Int) : Event
+        data class FileCard(val fromId: Int, val fileId: String, val name: String, val size: Long, val msgId: String, val ts: Long, val seq: Long) : Event
+
         data class FriendOffline(val userId: Int) : Event
 
         /** 账号在别处登录，被服务端踢下线 */
@@ -191,6 +196,27 @@ class ImClient {
         send(Protocol.ROAM_MSG_RQ, rq.toByteArray())
     }
 
+    suspend fun fileOffer(msgId: String, receiverId: Int, name: String, size: Long, totalChunks: Int, sha256: String) {
+        val rq = Im.FileOfferRq.newBuilder()
+            .setMsgId(msgId).setReceiverId(receiverId).setFileName(name)
+            .setFileSize(size).setTotalChunks(totalChunks).setSha256(sha256).build()
+        send(Protocol.FILE_OFFER_RQ, rq.toByteArray())
+    }
+    suspend fun fileChunk(fileId: String, index: Int, data: ByteArray) {
+        val rq = Im.FileChunkRq.newBuilder()
+            .setFileId(fileId).setChunkIndex(index)
+            .setData(com.google.protobuf.ByteString.copyFrom(data)).build()
+        send(Protocol.FILE_CHUNK_RQ, rq.toByteArray())
+    }
+    suspend fun fileComplete(fileId: String, msgId: String) {
+        val rq = Im.FileCompleteRq.newBuilder().setFileId(fileId).setMsgId(msgId).build()
+        send(Protocol.FILE_COMPLETE_RQ, rq.toByteArray())
+    }
+    suspend fun fileDownload(fileId: String, fromChunk: Int) {
+        val rq = Im.FileDownloadRq.newBuilder().setFileId(fileId).setFromChunk(fromChunk).build()
+        send(Protocol.FILE_DOWNLOAD_RQ, rq.toByteArray())
+    }
+
     /** 主动下线：通知服务端（其会广播好友）后关闭连接 */
     suspend fun logout() {
         if (connected && myId > 0) {
@@ -273,7 +299,9 @@ class ImClient {
                                 rq.imageWidth, rq.imageHeight, rq.msgId, tsMs, rq.seq,
                             )
                         )
-                    else -> Unit // FILE 属 M7
+                    Im.MsgType.FILE ->
+                        _events.emit(Event.FileCard(rq.myid, rq.fileId, rq.fileName, rq.fileSize, rq.msgId, tsMs, rq.seq))
+                    else -> Unit
                 }
             }
 
@@ -295,6 +323,19 @@ class ImClient {
                         rs.peerId, rs.msgsList.map { it.toRoamItem() }, rs.hasMore, rs.minSeq,
                     )
                 )
+            }
+
+            Protocol.FILE_OFFER_RS -> {
+                val rs = Im.FileOfferRs.parseFrom(f.payload)
+                _events.emit(Event.FileOfferResult(rs.msgId, rs.fileId, rs.receivedChunks, rs.result))
+            }
+            Protocol.FILE_CHUNK_RQ -> {
+                val rq = Im.FileChunkRq.parseFrom(f.payload)
+                _events.emit(Event.FileChunk(rq.fileId, rq.chunkIndex, rq.data.toByteArray()))
+            }
+            Protocol.FILE_PROGRESS_RS -> {
+                val rs = Im.FileProgressRs.parseFrom(f.payload)
+                _events.emit(Event.FileProgress(rs.fileId, rs.receivedChunks, rs.totalChunks, rs.status))
             }
 
             Protocol.FRIEND_OFFLINE ->
