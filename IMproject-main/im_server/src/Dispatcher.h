@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 
@@ -31,11 +32,28 @@ private:
     void onAddFriendRs(const std::shared_ptr<Session>& s, const std::string& payload);
     void onRoamConvRq(const std::shared_ptr<Session>& s, const std::string& payload);
     void onRoamMsgRq(const std::shared_ptr<Session>& s, const std::string& payload);
+    void onFileOfferRq(const std::shared_ptr<Session>& s, const std::string& payload);
+    void onFileChunkRq(const std::shared_ptr<Session>& s, const std::string& payload);
+    void onFileCompleteRq(const std::shared_ptr<Session>& s, const std::string& payload);
+    void onFileDownloadRq(const std::shared_ptr<Session>& s, const std::string& payload);
+    // 文件路径工具
+    std::string filePartPath(const std::string& fileId) const;   // uploads/file/tmp/<id>.part
+    std::string fileFinalPath(const std::string& fileId, const std::string& name) const; // uploads/file/<id>_<name>
 
     // 工具：下发一条 FriendInfo（在线状态由 Presence 决定）
     void sendFriendInfo(const std::shared_ptr<Session>& to, int userId, int onlineStatus);
     // 图片落盘：uploads/img/<sha256>.<真实格式扩展名>（按魔数嗅探），返回相对路径
     std::string saveImage(const std::string& bytes);
+
+    struct PendingUpload {
+        int receiverId = 0;
+        std::string fileName;
+        std::int64_t fileSize = 0;
+        int totalChunks = 0;
+        std::string sha256;
+    };
+    std::unordered_map<std::string, PendingUpload> m_pendingUploads; // key=file_id
+    std::mutex m_uploadMtx; // 保护 m_pendingUploads（跨会话业务 strand 并发访问）
 
     Server& m_server;
     std::unordered_map<std::uint32_t, Handler> m_handlers;

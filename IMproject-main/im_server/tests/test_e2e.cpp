@@ -49,6 +49,13 @@ struct RecordingEvents : IClientEvents {
     struct ImageMsg { int fromId; std::string bytes; int w; int h; std::string msgId; };
     std::vector<ImageMsg> images;
 
+    // 文件收集
+    im::FileOfferInfo lastOffer; bool gotOffer = false;
+    std::vector<std::pair<int,std::string>> downloadChunks; // (chunkIndex, data)
+    int lastProgressStatus = -1; int lastProgressRecv = -1;
+    struct FileCard { int fromId; std::string fileId; std::string name; std::int64_t size; std::string msgId; };
+    std::vector<FileCard> fileCards;
+
     // 漫游收集
     std::vector<RoamMessage> roamConvs;
     bool gotRoamConvs = false;
@@ -75,6 +82,20 @@ struct RecordingEvents : IClientEvents {
     }
     void onRoamMessages(int peerId, const std::vector<RoamMessage>& msgs, bool hasMore, std::int64_t minSeq) override {
         std::lock_guard<std::mutex> l(mtx); roamPages.push_back({peerId, msgs, hasMore, minSeq}); notify();
+    }
+
+    void onFileOfferResult(const im::FileOfferInfo& i) override {
+        std::lock_guard<std::mutex> l(mtx); lastOffer = i; gotOffer = true; notify();
+    }
+    void onFileChunk(const std::string&, int idx, const std::string& d) override {
+        std::lock_guard<std::mutex> l(mtx); downloadChunks.emplace_back(idx, d); notify();
+    }
+    void onFileProgress(const std::string&, int recv, int, int status) override {
+        std::lock_guard<std::mutex> l(mtx); lastProgressRecv = recv; lastProgressStatus = status; notify();
+    }
+    void onFileCard(int fromId, const std::string& fileId, const std::string& name,
+                    std::int64_t size, const std::string& msgId) override {
+        std::lock_guard<std::mutex> l(mtx); fileCards.push_back({fromId, fileId, name, size, msgId}); notify();
     }
 
     template <typename Pred>
@@ -306,6 +327,34 @@ int main()
         assert(pg.msgs.empty());
         assert(!pg.hasMore);
     }
+
+    // ============ M7：文件上传（分片 + 水位线 + Complete 校验 + 卡片转发） ============
+    // 造一个 300KB 文件（2 块：256KB + 44KB），a2(张三 idA) 发给 idB
+    std::string fileBytes(300 * 1024, '\0');
+    for (size_t i = 0; i < fileBytes.size(); ++i) fileBytes[i] = static_cast<char>((i * 31 + 7) % 256);
+    const int chunkSz = 256 * 1024;
+    const int totalChunks = (static_cast<int>(fileBytes.size()) + chunkSz - 1) / chunkSz; // 2
+    const std::string fileSha = im::sha256Hex(fileBytes);
+    const std::string fmsgId = "file-e2e-0001";
+
+    a2.sendFileOffer(fmsgId, idB, "report.bin", (std::int64_t)fileBytes.size(), totalChunks, fileSha);
+    assert(ea2.waitFor([&] { return ea2.gotOffer && ea2.lastOffer.msgId == fmsgId; }));
+    assert(ea2.lastOffer.result == FILE_OFFER_OK);
+    assert(ea2.lastOffer.receivedChunks == 0); // 新文件水位线 0
+
+    for (int i = 0; i < totalChunks; ++i) {
+        size_t off = (size_t)i * chunkSz;
+        size_t len = std::min((size_t)chunkSz, fileBytes.size() - off);
+        a2.sendFileChunk(fmsgId, i, fileBytes.substr(off, len));
+    }
+    a2.sendFileComplete(fmsgId, fmsgId);
+    // 发送方应收到 done 进度
+    assert(ea2.waitFor([&] { return ea2.lastProgressStatus == FILE_ST_DONE; }));
+    // 接收方 b3(李四) 应收到文件卡片（ChatInfoRq type=FILE，走在线转发）
+    assert(eb3.waitFor([&] {
+        for (auto& fc : eb3.fileCards) if (fc.fileId == fmsgId && fc.name == "report.bin") return true;
+        return false;
+    }));
 
     a2.disconnect();
     b3.disconnect();

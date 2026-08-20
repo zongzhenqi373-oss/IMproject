@@ -385,6 +385,13 @@ void ClientCore::onChatInfoRq(const char* data, std::size_t len)
     im::proto::ChatInfoRq rq;
     if (!parsePayload(data, len, rq)) return;
 
+    // 文件卡片单独回调（rq.myid 是发送方）
+    if (rq.type() == im::proto::FILE) {
+        if (auto* ev = m_events.load())
+            ev->onFileCard(rq.myid(), rq.file_id(), rq.file_name(), rq.file_size(), rq.msg_id());
+        return;
+    }
+
     // 图片消息单独回调（rq.myid 是发送方）
     if (rq.type() == im::proto::IMAGE) {
         if (auto* ev = m_events.load()) {

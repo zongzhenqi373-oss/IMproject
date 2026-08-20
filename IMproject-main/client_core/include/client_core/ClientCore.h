@@ -83,6 +83,10 @@ public:
     // 传输进度（上传/下载共用）
     virtual void onFileProgress(const std::string& fileId, int received, int total, int status)
     { (void)fileId; (void)received; (void)total; (void)status; }
+    // 收到文件卡片（ChatInfoRq type=FILE，在线转发/离线补发共用）
+    virtual void onFileCard(int fromId, const std::string& fileId, const std::string& name,
+                            std::int64_t size, const std::string& msgId)
+    { (void)fromId; (void)fileId; (void)name; (void)size; (void)msgId; }
 };
 
 class ClientCore {

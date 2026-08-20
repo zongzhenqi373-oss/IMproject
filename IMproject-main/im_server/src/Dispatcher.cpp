@@ -76,6 +76,10 @@ Dispatcher::Dispatcher(Server& server)
     m_handlers[DEF_PROT_ADD_FRIEND_RS]  = [this](auto& s, auto& p) { onAddFriendRs(s, p); };
     m_handlers[DEF_PROT_ROAM_CONV_RQ]   = [this](auto& s, auto& p) { onRoamConvRq(s, p); };
     m_handlers[DEF_PROT_ROAM_MSG_RQ]    = [this](auto& s, auto& p) { onRoamMsgRq(s, p); };
+    m_handlers[DEF_PROT_FILE_OFFER_RQ]    = [this](auto& s, auto& p) { onFileOfferRq(s, p); };
+    m_handlers[DEF_PROT_FILE_CHUNK_RQ]    = [this](auto& s, auto& p) { onFileChunkRq(s, p); };
+    m_handlers[DEF_PROT_FILE_COMPLETE_RQ] = [this](auto& s, auto& p) { onFileCompleteRq(s, p); };
+    m_handlers[DEF_PROT_FILE_DOWNLOAD_RQ] = [this](auto& s, auto& p) { onFileDownloadRq(s, p); };
 }
 
 void Dispatcher::handle(const std::shared_ptr<Session>& s, std::uint32_t type, const std::string& payload)
@@ -387,6 +391,174 @@ void Dispatcher::onRoamMsgRq(const std::shared_ptr<Session>& s, const std::strin
     s->deliver(DEF_PROT_ROAM_MSG_RS, rs.SerializeAsString());
     log("[业务] 漫游历史 id=", userId, " peer=", peerId,
         " before_seq=", beforeSeq, " 返回=", rs.msgs_size(), " hasMore=", rs.has_more());
+}
+
+std::string Dispatcher::filePartPath(const std::string& fileId) const
+{
+    return m_server.uploadDir() + "/file/tmp/" + fileId + ".part";
+}
+std::string Dispatcher::fileFinalPath(const std::string& fileId, const std::string& name) const
+{
+    return m_server.uploadDir() + "/file/" + fileId + "_" + name;
+}
+
+void Dispatcher::onFileOfferRq(const std::shared_ptr<Session>& s, const std::string& payload)
+{
+    if (s->userId() <= 0) return;
+    FileOfferRq rq;
+    if (!parsePayload(payload, rq)) return;
+
+    FileOfferRs rs;
+    rs.set_msg_id(rq.msg_id());
+    rs.set_file_id(rq.msg_id()); // file_id == msg_id
+    if (rq.file_size() > FILE_MAX_SIZE || rq.file_size() < 0) {
+        rs.set_result(FILE_OFFER_TOO_LARGE);
+        rs.set_received_chunks(0);
+        s->deliver(DEF_PROT_FILE_OFFER_RS, rs.SerializeAsString());
+        return;
+    }
+    std::error_code ec;
+    std::filesystem::create_directories(m_server.uploadDir() + "/file/tmp", ec);
+    // 水位线 N = 已有 .part 大小 / CHUNK_SIZE（顺序追加，故整除即已连续收到块数）
+    const std::string part = filePartPath(rq.msg_id());
+    std::int64_t partSize = 0;
+    if (std::filesystem::exists(part, ec)) partSize = (std::int64_t)std::filesystem::file_size(part, ec);
+    const int n = (int)(partSize / (std::int64_t)FILE_CHUNK_SIZE);
+    rs.set_received_chunks(n);
+    rs.set_result(FILE_OFFER_OK);
+    {
+        std::lock_guard<std::mutex> lg(m_uploadMtx);
+        m_pendingUploads[rq.msg_id()] = PendingUpload{
+            rq.receiver_id(), rq.file_name(), rq.file_size(), rq.total_chunks(), rq.sha256() };
+    }
+    s->deliver(DEF_PROT_FILE_OFFER_RS, rs.SerializeAsString());
+    log("[业务] 文件协商 id=", s->userId(), " file=", rq.file_name(), " size=", rq.file_size(), " N=", n);
+}
+
+void Dispatcher::onFileChunkRq(const std::shared_ptr<Session>& s, const std::string& payload)
+{
+    if (s->userId() <= 0) return;
+    FileChunkRq rq;
+    if (!parsePayload(payload, rq)) return;
+
+    const std::string part = filePartPath(rq.file_id());
+    std::error_code ec;
+    std::int64_t partSize = std::filesystem::exists(part, ec)
+        ? (std::int64_t)std::filesystem::file_size(part, ec) : 0;
+    const int n = (int)(partSize / (std::int64_t)FILE_CHUNK_SIZE);
+    if (rq.chunk_index() == n) {
+        std::ofstream ofs(part, std::ios::binary | std::ios::app);
+        ofs.write(rq.data().data(), (std::streamsize)rq.data().size());
+    } // <n 幂等丢弃；>n 忽略（顺序传输不应乱序）
+
+    // 回进度（新水位线）
+    std::int64_t newSize = std::filesystem::exists(part, ec)
+        ? (std::int64_t)std::filesystem::file_size(part, ec) : 0;
+    FileProgressRs pr;
+    pr.set_file_id(rq.file_id());
+    pr.set_received_chunks((int)(newSize / (std::int64_t)FILE_CHUNK_SIZE));
+    pr.set_status(FILE_ST_UPLOADING);
+    s->deliver(DEF_PROT_FILE_PROGRESS_RS, pr.SerializeAsString());
+}
+
+void Dispatcher::onFileCompleteRq(const std::shared_ptr<Session>& s, const std::string& payload)
+{
+    const int uid = s->userId();
+    if (uid <= 0) return;
+    FileCompleteRq rq;
+    if (!parsePayload(payload, rq)) return;
+
+    // 从 Offer 缓存不到元数据 —— Complete 只带 file_id/msg_id，需要文件名/size/sha/receiver。
+    // 方案：Offer 时把元数据落一张内存表 m_pendingUploads[file_id]。
+    PendingUpload up;
+    {
+        std::lock_guard<std::mutex> lg(m_uploadMtx);
+        auto it = m_pendingUploads.find(rq.file_id());
+        if (it == m_pendingUploads.end()) return;
+        up = it->second;
+    }
+
+    const std::string part = filePartPath(rq.file_id());
+    std::error_code ec;
+    std::int64_t partSize = std::filesystem::exists(part, ec)
+        ? (std::int64_t)std::filesystem::file_size(part, ec) : 0;
+
+    auto fail = [&]() {
+        std::filesystem::remove(part, ec);
+        {
+            std::lock_guard<std::mutex> lg(m_uploadMtx);
+            m_pendingUploads.erase(rq.file_id());
+        }
+        FileProgressRs pr; pr.set_file_id(rq.file_id());
+        pr.set_status(FILE_ST_FAILED);
+        s->deliver(DEF_PROT_FILE_PROGRESS_RS, pr.SerializeAsString());
+    };
+
+    if (partSize != up.fileSize) { fail(); return; }
+    // 流式 sha256（复用 im::Sha256 增量类）
+    im::Sha256 h;
+    {
+        std::ifstream ifs(part, std::ios::binary);
+        std::vector<char> buf(64 * 1024);
+        while (ifs) { ifs.read(buf.data(), (std::streamsize)buf.size());
+            if (ifs.gcount() > 0) h.update(buf.data(), (std::size_t)ifs.gcount()); }
+    }
+    const std::vector<unsigned char> dg = h.final();
+    static const char* hex = "0123456789abcdef";
+    std::string got; got.reserve(64);
+    for (unsigned char b : dg) { got.push_back(hex[(b>>4)&0xF]); got.push_back(hex[b&0xF]); }
+    if (got != up.sha256) { fail(); return; }
+
+    // 落盘：移动到成品
+    const std::string finalPath = fileFinalPath(rq.file_id(), up.fileName);
+    std::filesystem::rename(part, finalPath, ec);
+    if (ec) { std::filesystem::copy_file(part, finalPath, std::filesystem::copy_options::overwrite_existing, ec);
+              std::filesystem::remove(part, ec); }
+
+    // 建文件消息（type=2）
+    StoredMessage m;
+    m.msgId = rq.msg_id();
+    m.senderId = uid;
+    m.receiverId = up.receiverId;
+    m.type = 2;
+    m.content = up.fileName;       // content 存文件名
+    m.mediaPath = finalPath;
+    m.fileId = rq.file_id();
+    m.fileSize = up.fileSize;
+    m.ts = nowSec();
+    const bool online = (bool)m_server.presence().get(up.receiverId);
+    m_server.db().saveMessage(m, online);
+
+    // 组文件卡片（ChatInfoRq type=FILE），转发在线接收方 / 离线等补发
+    ChatInfoRq card;
+    card.set_myid(uid);
+    card.set_friid(up.receiverId);
+    card.set_type(im::proto::FILE);
+    card.set_msg_id(rq.msg_id());
+    card.set_ts(m.ts);
+    card.set_seq(m.seq);
+    card.set_file_name(up.fileName);
+    card.set_file_size(up.fileSize);
+    card.set_file_id(rq.file_id());
+    if (auto target = m_server.presence().get(up.receiverId)) {
+        target->deliver(DEF_PROT_CHAT_INFO_RQ, card.SerializeAsString());
+    }
+
+    {
+        std::lock_guard<std::mutex> lg(m_uploadMtx);
+        m_pendingUploads.erase(rq.file_id());
+    }
+    FileProgressRs pr; pr.set_file_id(rq.file_id());
+    pr.set_status(FILE_ST_DONE);
+    pr.set_received_chunks(up.totalChunks); pr.set_total_chunks(up.totalChunks);
+    s->deliver(DEF_PROT_FILE_PROGRESS_RS, pr.SerializeAsString());
+    log("[业务] 文件完成 file=", up.fileName, " -> ", finalPath, " online=", online);
+}
+
+void Dispatcher::onFileDownloadRq(const std::shared_ptr<Session>& s, const std::string& payload)
+{
+    // 下载实现见 Task 6（本任务仅注册占位，避免未注册协议号日志）。
+    (void)s; (void)payload;
 }
 
 } // namespace imsrv

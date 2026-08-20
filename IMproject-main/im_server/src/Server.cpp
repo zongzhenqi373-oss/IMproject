@@ -38,6 +38,7 @@ bool Server::start()
     std::filesystem::create_directories(std::filesystem::path(m_dbPath).parent_path(), ec);
     std::filesystem::create_directories(m_uploadDir + "/img", ec);
     std::filesystem::create_directories(m_uploadDir + "/file", ec);
+    std::filesystem::create_directories(m_uploadDir + "/file/tmp", ec);
 
     if (!m_db.open(m_dbPath, m_dbWorkers)) {
         log("[server] 打开数据库失败: ", m_dbPath);
