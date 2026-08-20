@@ -47,7 +47,9 @@ bool Server::start()
         if (std::filesystem::exists(tmpDir, ec)) {
             const auto now = std::filesystem::file_time_type::clock::now();
             for (auto& e : std::filesystem::directory_iterator(tmpDir, ec)) {
-                if (!e.is_regular_file()) continue;
+                std::error_code fec;
+                if (!e.is_regular_file(fec) || fec) continue;
+                if (e.path().extension() != ".part") continue;
                 auto mtime = std::filesystem::last_write_time(e, ec);
                 if (!ec && (now - mtime) > std::chrono::hours(24))
                     std::filesystem::remove(e.path(), ec);
