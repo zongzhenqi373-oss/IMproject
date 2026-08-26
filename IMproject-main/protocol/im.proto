@@ -25,11 +25,59 @@ message RegisterRs {
 message LoginRq {
   string tel = 1;
   string pass = 2;
+  string device_id = 3;   // device_id 和 device_name 用于设备标识
+  string device_name = 4;
+  string client_version = 5;  // client_version 用于客户端版本标识
 }
 
 message LoginRs {
   int32 userid = 1;
   int32 result = 2; // proto::LOGIN_SUCCESS / LOGIN_NOTEXIT / LOGIN_PASSERROR
+  string access_token = 3;   // access_token 和 refresh_token 用于刷新 token
+  string refresh_token = 4;
+  int64 access_token_expire_at = 5;   // access_token 和 refresh_token 的过期时间
+  int64 refresh_token_expire_at = 6;
+  string session_id = 7;    // session_id 用于会话标识
+}
+
+// ----------------Token刷新 ----------------
+message RefreshTokenRq {
+  string refresh_token = 1;
+  string device_id = 2;   // device_id 设备标识
+  string request_id = 3;  //请求id用于标识请求
+}
+
+message RefreshTokenRs {
+  int32 result = 1; // proto::REFRESH_TOKEN_SUCCESS / REFRESH_TOKEN_FAIL
+  string access_token = 2;
+  string refresh_token = 3;
+  int64 access_token_expire_at = 4;
+  int64 refresh_token_expire_at = 5;
+  string session_id = 6;
+}
+
+// ---------------- Token登录 ----------------
+message TokenLoginRq {
+  string access_token = 1;
+  string device_id = 3;   // device_id 设备标识
+  string request_id = 4;  //请求id用于标识请求
+}
+
+message TokenLoginRs {
+  int32 result = 1; // proto::LOGIN_SUCCESS / LOGIN_NOTEXIT / LOGIN_PASSERROR
+  int32 userid = 2;
+  int64 access_token_expire_at = 3;   // access_token 的过期时间
+}
+
+// ---------------- 登出 ----------------
+message LogoutRq {
+  string refresh_token = 1;
+  string device_id = 2;   // device_id 设备标识
+  bool logout_all_devices = 3;
+}
+
+message LogoutRs {
+  int32 result = 1; // proto::LOGOUT_SUCCESS / LOGOUT_FAIL
 }
 
 // ---------------- 用户/好友信息 ----------------
