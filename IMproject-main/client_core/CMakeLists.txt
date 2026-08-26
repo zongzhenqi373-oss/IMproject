@@ -45,10 +45,25 @@ endif()
 
 # SQLite：优先系统/Homebrew 安装
 if(APPLE)
-    list(APPEND CMAKE_PREFIX_PATH /opt/homebrew/opt/sqlite /usr/local/opt/sqlite)
+    list(APPEND CMAKE_PREFIX_PATH
+        /opt/homebrew/opt/sqlite
+        /usr/local/opt/sqlite
+        /opt/homebrew/opt/openssl@3
+        /usr/local/opt/openssl@3
+    )
 endif()
 find_package(SQLite3 REQUIRED)
-target_link_libraries(client_core PUBLIC SQLite3::SQLite3)
+#添加openssl链接库
+find_package(OpenSSL REQUIRED)
+target_link_libraries(
+    client_core 
+    PUBLIC 
+        Threads::Threads 
+        im_protocol 
+        SQLite3::SQLite3 
+        OpenSSL::SSL 
+        OpenSSL::Crypto
+)
 
 # ---------------- 单元测试 ----------------
 if(CLIENT_CORE_BUILD_TESTS)
@@ -63,11 +78,31 @@ if(CLIENT_CORE_BUILD_TESTS)
     target_link_libraries(test_storage PRIVATE client_core)
     add_test(NAME storage COMMAND test_storage)
 
-    # 回环集成测试：自带 asio 假服务端，需要 asio 头文件
+    # 回环集成测试：自带 asio TLS 假服务端（跟真服务端一样强制握手），需要 asio 头文件 + 一份自签测试证书
+    find_program(OPENSSL_CLI openssl REQUIRED)
+    set(TEST_TLS_DIR ${CMAKE_BINARY_DIR}/config)
+    set(TEST_TLS_CERT ${TEST_TLS_DIR}/test_server.crt)
+    set(TEST_TLS_KEY ${TEST_TLS_DIR}/test_server.key)
+    add_custom_command(
+        OUTPUT ${TEST_TLS_CERT} ${TEST_TLS_KEY}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${TEST_TLS_DIR}
+        COMMAND ${OPENSSL_CLI} req -x509 -newkey rsa:2048 -sha256 -nodes
+                -keyout ${TEST_TLS_KEY} -out ${TEST_TLS_CERT} -days 2
+                -subj /CN=im.example.com
+                -addext subjectAltName=DNS:im.example.com,DNS:localhost,IP:127.0.0.1
+        VERBATIM
+    )
+    add_custom_target(client_core_test_tls_material DEPENDS ${TEST_TLS_CERT} ${TEST_TLS_KEY})
+
     add_executable(test_integration tests/test_integration.cpp)
+    add_dependencies(test_integration client_core_test_tls_material)
     target_link_libraries(test_integration PRIVATE client_core)
     target_include_directories(test_integration PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/asio/include)
-    target_compile_definitions(test_integration PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
+    target_compile_definitions(test_integration PRIVATE
+        ASIO_STANDALONE ASIO_NO_DEPRECATED
+        CLIENT_CORE_TEST_CERT="${TEST_TLS_CERT}"
+        CLIENT_CORE_TEST_KEY="${TEST_TLS_KEY}"
+    )
     if(WIN32)
         target_link_libraries(test_integration PRIVATE ws2_32)
     endif()
@@ -79,4 +114,8 @@ if(CLIENT_CORE_BUILD_TOOLS)
     add_executable(im_cli tools/im_cli.cpp)
     target_link_libraries(im_cli PRIVATE client_core)
     target_include_directories(im_cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../protocol)
+    # 默认信任 im_server 自带的开发证书；本机路径由 CMake 注入，不再硬编码某个人电脑上的绝对路径
+    target_compile_definitions(im_cli PRIVATE
+        IM_CLI_DEFAULT_CA="${CMAKE_CURRENT_SOURCE_DIR}/../im_server/config/dev_server.crt"
+    )
 endif()

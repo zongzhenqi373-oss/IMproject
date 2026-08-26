@@ -1,7 +1,8 @@
 // im_cli：client_core 的命令行演示客户端
 // 用途：Mac 本机不依赖 Qt/Android，直接连 im_server 真实互聊（演示/联调/兜底第二端）
 //
-// 用法: im_cli [ip] [port]        默认 127.0.0.1 24563
+// 用法: im_cli [ip] [port] [tls_server_name] [ca_file]        默认 127.0.0.1 24563 im.example.com <im_server 开发证书>
+// tls_server_name/ca_file 用于连接非本机部署的真实服务器时，匹配对方证书的实际域名/受信任 CA
 // 命令:
 //   register <昵称> <手机号> <密码>     注册
 //   login <手机号> <密码>               登录（种子用户: 张三 13800000001 / 李四 13800000002 / 王五 13800000003，密码均 123456）
@@ -98,8 +99,12 @@ int main(int argc, char* argv[])
 {
     const std::string ip = argc > 1 ? argv[1] : "127.0.0.1";
     const std::uint16_t port = argc > 2 ? static_cast<std::uint16_t>(std::atoi(argv[2])) : im::proto::TCP_PORT;
+    // tls_server_name/ca_file 都可以在命令行覆盖：连本机开发服务器时用默认值即可；
+    // 连真实部署的服务器时，需要传对方证书实际签发的域名 + 信任的 CA，不能一直用开发证书糊弄过去
+    const std::string tlsServerName = argc > 3 ? argv[3] : "im.example.com";
+    const std::string caFile = argc > 4 ? argv[4] : IM_CLI_DEFAULT_CA;
 
-    im::ClientCore core;
+    im::ClientCore core({tlsServerName, caFile});
     CliEvents events;
     core.setEventSink(&events);
 

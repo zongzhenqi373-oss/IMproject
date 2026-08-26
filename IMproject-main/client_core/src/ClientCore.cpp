@@ -45,9 +45,15 @@ std::string makeMsgId()
 }
 } // namespace
 
-ClientCore::ClientCore()
-    : m_transport(new TcpTransport)
+ClientCore::ClientCore(ClientConfig config)
 {
+    //开发阶段如果证书SAN是 IP:127.0.0.1，serverName可以暂时传 "127.0.0.1"。
+    //不能使用 verify_none 或永远返回true的验证回调。
+    m_transport = std::make_unique<TcpTransport>(
+        std::move(config.tlsServerName),
+        std::move(config.caFile)
+    );
+
     initFunArr();
 
     m_transport->setPacketHandler([this](const char* data, std::size_t len) {
@@ -154,6 +160,10 @@ void ClientCore::sendLogin(const std::string& tel, const std::string& pass)
     rq.set_tel(utf8Truncate(tel, USER_TEL_LEN - 1));
     // 对齐 QQNT：传输的是密码哈希，而非明文
     rq.set_pass(sha256Hex(pass));
+    // C++ 客户端尚未接平台设备信息，先使用稳定的客户端实例类别标识参与 Token 设备绑定。
+    rq.set_device_id("client-core-default");
+    rq.set_device_name("C++ ClientCore");
+    rq.set_client_version("client-core-0.5.0");
     sendPacket(DEF_PROT_LOGIN_RQ, rq.SerializeAsString());
 }
 

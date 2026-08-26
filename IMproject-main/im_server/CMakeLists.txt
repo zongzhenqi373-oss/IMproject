@@ -23,29 +23,55 @@ if(NOT TARGET im_protocol)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../protocol ${CMAKE_BINARY_DIR}/protocol)
 endif()
 if(APPLE)
-    list(APPEND CMAKE_PREFIX_PATH /opt/homebrew/opt/sqlite /usr/local/opt/sqlite)
+    list(APPEND CMAKE_PREFIX_PATH
+        /opt/homebrew/opt/sqlite
+        /usr/local/opt/sqlite
+        /opt/homebrew/opt/openssl@3
+        /usr/local/opt/openssl@3
+    )
 endif()
 find_package(SQLite3 REQUIRED)
 find_package(Threads REQUIRED)
+# 添加OpenSSL依赖
+find_package(OpenSSL REQUIRED)
+find_path(ARGON2_INCLUDE_DIR argon2.h HINTS /opt/homebrew/include /usr/local/include)
+find_library(ARGON2_LIBRARY argon2 HINTS /opt/homebrew/lib /usr/local/lib)
+if(NOT ARGON2_INCLUDE_DIR OR NOT ARGON2_LIBRARY)
+    message(FATAL_ERROR "Argon2 library not found; install libargon2 (macOS: brew install argon2)")
+endif()
 
 set(ASIO_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/../client_core/third_party/asio/include)
 
 # ---------------- im_server_lib（业务库，供可执行文件与测试共用） ----------------
 add_library(im_server_lib STATIC
     src/Database.cpp
+    src/DbWriteQueue.cpp
     src/Presence.cpp
     src/Session.cpp
     src/Dispatcher.cpp
     src/Server.cpp
+    src/auth/TokenService.cpp
 )
 target_include_directories(im_server_lib
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/src
             ${ASIO_INCLUDE}
             ${CMAKE_CURRENT_SOURCE_DIR}/../protocol
             ${CMAKE_CURRENT_SOURCE_DIR}/../client_core/include
+            ${ARGON2_INCLUDE_DIR}
 )
 target_compile_definitions(im_server_lib PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
-target_link_libraries(im_server_lib PUBLIC im_protocol SQLite3::SQLite3 Threads::Threads)
+# 修改链接库
+target_link_libraries(
+    im_server_lib 
+    PUBLIC 
+        im_protocol 
+        SQLite3::SQLite3 
+        Threads::Threads 
+        OpenSSL::SSL 
+        OpenSSL::Crypto
+        ${ARGON2_LIBRARY}
+)
+
 if(WIN32)
     target_link_libraries(im_server_lib PUBLIC ws2_32)
 endif()
@@ -53,17 +79,58 @@ endif()
 # ---------------- im_server 可执行文件 ----------------
 add_executable(im_server src/main.cpp)
 target_link_libraries(im_server PRIVATE im_server_lib)
+target_compile_definitions(im_server PRIVATE
+    IM_SERVER_DEFAULT_CERT="${CMAKE_CURRENT_SOURCE_DIR}/config/dev_server.crt"
+    IM_SERVER_DEFAULT_KEY="${CMAKE_CURRENT_SOURCE_DIR}/config/dev_server.key"
+)
 
 # ---------------- e2e 测试（真服务端 + client_core 真客户端回环） ----------------
 if(IM_SERVER_BUILD_TESTS)
     enable_testing()
+    find_program(OPENSSL_CLI openssl REQUIRED)
+    set(TEST_TLS_DIR ${CMAKE_BINARY_DIR}/config)
+    set(TEST_TLS_CERT ${TEST_TLS_DIR}/test_server.crt)
+    set(TEST_TLS_KEY ${TEST_TLS_DIR}/test_server.key)
+    set(TEST_TLS_CA ${TEST_TLS_DIR}/ca.crt)
+    add_custom_command(
+        OUTPUT ${TEST_TLS_CERT} ${TEST_TLS_KEY} ${TEST_TLS_CA}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${TEST_TLS_DIR}
+        COMMAND ${OPENSSL_CLI} req -x509 -newkey rsa:2048 -sha256 -nodes
+                -keyout ${TEST_TLS_KEY} -out ${TEST_TLS_CERT} -days 2
+                -subj /CN=im.example.com
+                -addext subjectAltName=DNS:im.example.com,IP:127.0.0.1
+        COMMAND ${CMAKE_COMMAND} -E copy ${TEST_TLS_CERT} ${TEST_TLS_CA}
+        VERBATIM
+    )
+    add_custom_target(test_tls_material DEPENDS ${TEST_TLS_CERT} ${TEST_TLS_KEY} ${TEST_TLS_CA})
     set(CLIENT_CORE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     if(NOT TARGET client_core)
         add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../client_core ${CMAKE_BINARY_DIR}/client_core)
     endif()
 
     add_executable(test_e2e tests/test_e2e.cpp)
+    add_dependencies(test_e2e test_tls_material)
+    target_compile_definitions(test_e2e PRIVATE
+        IM_SERVER_TEST_CERT="${TEST_TLS_CERT}"
+        IM_SERVER_TEST_KEY="${TEST_TLS_KEY}"
+    )
     target_link_libraries(test_e2e PRIVATE im_server_lib client_core)
     target_include_directories(test_e2e PRIVATE ${ASIO_INCLUDE})
     add_test(NAME e2e COMMAND test_e2e)
+
+    add_executable(test_database_concurrency tests/test_database_concurrency.cpp)
+    target_link_libraries(test_database_concurrency PRIVATE im_server_lib)
+    add_test(NAME database_concurrency COMMAND test_database_concurrency)
+
+    add_executable(test_token_service tests/test_token_service.cpp)
+    target_link_libraries(test_token_service PRIVATE im_server_lib)
+    add_test(NAME token_service COMMAND test_token_service)
+
+    add_executable(test_db_write_queue tests/test_db_write_queue.cpp)
+    target_link_libraries(test_db_write_queue PRIVATE im_server_lib)
+    add_test(NAME db_write_queue COMMAND test_db_write_queue)
+
+    add_executable(test_conversation_migration tests/test_conversation_migration.cpp)
+    target_link_libraries(test_conversation_migration PRIVATE im_server_lib)
+    add_test(NAME conversation_migration COMMAND test_conversation_migration)
 endif()

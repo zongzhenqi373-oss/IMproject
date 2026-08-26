@@ -1,11 +1,35 @@
 #include "TcpTransport.h"
 #include "client_core/Protocol.h"
 
+#include <openssl/ssl.h>
+#include <openssl/tls1.h>
+#include <iostream>
+
 namespace im {
 
-TcpTransport::TcpTransport()
-    : m_socket(m_io)
+TcpTransport::TcpTransport(
+    std::string serverName,
+    std::string caFile
+)
+    : m_sslContext(asio::ssl::context::tls_client)
+    , m_stream(m_io, m_sslContext)
+    , m_serverName(std::move(serverName))
+    , m_caFile(std::move(caFile))
 {
+    SSL_CTX* native = m_sslContext.native_handle();
+    
+    if(SSL_CTX_set_min_proto_version(
+        native,
+        TLS1_3_VERSION
+    ) != 1){
+        throw std::runtime_error("无法启用TLS 1.3");
+    }
+
+    m_sslContext.set_verify_mode(asio::ssl::verify_peer);
+    m_sslContext.load_verify_file(m_caFile);
+
+    m_stream.set_verify_mode(asio::ssl::verify_peer);
+    m_stream.set_verify_callback(asio::ssl::host_name_verification(m_serverName));
 }
 
 TcpTransport::~TcpTransport()
@@ -22,11 +46,41 @@ bool TcpTransport::connect(const std::string& host, std::uint16_t port)
     auto endpoints = resolver.resolve(host, std::to_string(port), ec);
     if (ec) return false;
 
-    asio::connect(m_socket, endpoints, ec);
+    asio::connect(m_stream.lowest_layer(), endpoints, ec);
     if (ec) return false;
+
+    if(!SSL_set_tlsext_host_name(
+        m_stream.native_handle(),
+        m_serverName.c_str()
+    )){
+        return false;
+    }
+    m_stream.handshake(asio::ssl::stream_base::client, ec);
+
+    if (ec){
+        //打印客户端握手信息
+        std::cerr
+        << "[TLS] 客户端握手失败 error="
+        << ec.message()
+        << std::endl;
+
+        asio::error_code closeEc;
+        m_stream.lowest_layer().close(closeEc);
+        return false;
+    }else{
+        //打印客户端握手信息
+        SSL* ssl = m_stream.native_handle();
+        std::cout
+            << "[TLS] 客户端握手成功"
+            << " version=" << SSL_get_version(ssl)
+            << " cipher=" << SSL_get_cipher_name(ssl)
+            << " serverName=" << m_serverName
+            << std::endl;
+    }
 
     m_open = true;
     doReadHeader();
+
     m_thread = std::thread([this]() { m_io.run(); });
     return true;
 }
@@ -59,7 +113,7 @@ void TcpTransport::close()
                 return;
             }
             asio::error_code ec;
-            m_socket.close(ec);
+            m_stream.lowest_layer().close(ec);
         });
     }
     if (m_thread.joinable()) m_thread.join();
@@ -69,7 +123,7 @@ void TcpTransport::close()
 
 void TcpTransport::doReadHeader()
 {
-    asio::async_read(m_socket, asio::buffer(m_hdrBuf),
+    asio::async_read(m_stream, asio::buffer(m_hdrBuf),
         [this](const asio::error_code& ec, std::size_t) {
             if (ec) { notifyClose(); return; }
             const std::uint32_t bodyLen = decodeLen32(m_hdrBuf.data());
@@ -82,7 +136,7 @@ void TcpTransport::doReadHeader()
 void TcpTransport::doReadBody(std::uint32_t bodyLen)
 {
     m_bodyBuf.resize(bodyLen);
-    asio::async_read(m_socket, asio::buffer(m_bodyBuf.data(), bodyLen),
+    asio::async_read(m_stream, asio::buffer(m_bodyBuf.data(), bodyLen),
         [this](const asio::error_code& ec, std::size_t) {
             if (ec) { notifyClose(); return; }
             if (m_onPacket) m_onPacket(m_bodyBuf.data(), m_bodyBuf.size());
@@ -92,7 +146,7 @@ void TcpTransport::doReadBody(std::uint32_t bodyLen)
 
 void TcpTransport::doWrite()
 {
-    asio::async_write(m_socket, asio::buffer(*m_writeQueue.front()),
+    asio::async_write(m_stream, asio::buffer(*m_writeQueue.front()),
         [this](const asio::error_code& ec, std::size_t) {
             if (ec) { notifyClose(); return; }
             m_writeQueue.pop_front();
@@ -100,7 +154,7 @@ void TcpTransport::doWrite()
                 doWrite();
             } else if (m_closing) {
                 asio::error_code ec2;
-                m_socket.close(ec2);
+                m_stream.lowest_layer().close(ec2);
             }
         });
 }

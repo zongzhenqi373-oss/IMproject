@@ -15,6 +15,7 @@
 #include <vector>
 
 #include <asio.hpp>
+#include <asio/ssl.hpp>
 
 namespace im {
 
@@ -41,7 +42,10 @@ public:
     using PacketHandler = std::function<void(const char* data, std::size_t len)>;
     using VoidHandler = std::function<void()>;
 
-    TcpTransport();
+    TcpTransport(
+        std::string serverName,
+        std::string caFile
+    );
     ~TcpTransport();
 
     TcpTransport(const TcpTransport&) = delete;
@@ -69,8 +73,11 @@ private:
     void notifyClose(); // 保证断连回调只触发一次
 
     asio::io_context m_io;
-    asio::ip::tcp::socket m_socket;
+    asio::ssl::context m_sslContext;
+    asio::ssl::stream<asio::ip::tcp::socket> m_stream;
     std::thread m_thread;
+    std::string m_serverName;
+    std::string m_caFile;
 
     std::atomic<bool> m_open{false};
     std::atomic<bool> m_notified{false};

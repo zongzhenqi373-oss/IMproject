@@ -1,9 +1,11 @@
 package com.jitong.im.ui
 
+import android.R
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jitong.im.data.ChatStore
 import com.jitong.im.data.Prefs
+import com.jitong.im.data.crypto.DbKeyManager
 import com.jitong.im.data.db.ConversationEntity
 import com.jitong.im.data.db.MessageEntity
 import com.jitong.im.net.ImClient
@@ -14,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 
 enum class Screen { Login, FriendList, Chat }
@@ -24,6 +27,9 @@ data class Friend(
     val feeling: String,
     val online: Boolean,
 )
+
+//添加好友请求和回复
+data class IncomingFriendRequest(val fromId: Int, val fromNick: String)
 
 enum class MsgKind { TEXT, IMAGE, FILE }
 
@@ -52,6 +58,7 @@ class MainViewModel : ViewModel() {
 
     private val client = ImClient()
     private var store: ChatStore? = null
+    private var storeOwnerId: Int? = null // store 是给哪个账号开的（换号登录时需要重开，不能沿用旧账号的 ChatStore）
 
     /** 当前登录账号 id（未登录为 0） */
     val myId: Int get() = client.myId
@@ -71,6 +78,10 @@ class MainViewModel : ViewModel() {
     /** 好友列表：在线的排前面 */
     private val _friends = MutableStateFlow<List<Friend>>(emptyList())
     val friends: StateFlow<List<Friend>> = _friends
+
+    /**添加好友*/
+    private val _incomingFriendRequest = MutableStateFlow<IncomingFriendRequest?>(null)
+    val incomingFriendRequest: StateFlow<IncomingFriendRequest?> = _incomingFriendRequest
 
     /** 会话消息：peerId -> 有序消息列表（登录后从 Room 装载，运行期内存驻留） */
     private val _messages = MutableStateFlow<Map<Int, List<ChatMessage>>>(emptyMap())
@@ -92,13 +103,15 @@ class MainViewModel : ViewModel() {
 
     private var expectDisconnect = false
     private var lastTel: String? = null
-    private var lastHash: String? = null
+    private var lastHash: String? = null // 仅用于当前进程内打开本地加密 DB，不再作为网络重连凭证
     private var pendingRemember = false // 本次登录是否勾选“记住账号密码”
     private var pendingPass: String? = null // 本次登录的明文密码（记住时持久化用于回填）
 
     /** 断线自动重连任务与状态（防止并发重连、登录成功后清零退避） */
     private var reconnectJob: kotlinx.coroutines.Job? = null
     private var reconnecting = false
+    private val refreshMutex = kotlinx.coroutines.sync.Mutex()
+    private var refreshRequestInFlight = false
 
     /** 漫游分页状态：每会话已加载最小 seq（上拉游标）、是否还有更早、是否正在加载（防抖） */
     private val loadedMinSeq = mutableMapOf<Int, Long>()
@@ -109,11 +122,26 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch { collectEvents() }
     }
 
-    /** MainActivity 注入仓储：仅注入本地库，不做自动登录（登录页会回填记住的账号密码，由用户手动登录） */
-    fun attachStore(store: ChatStore) {
-        if (this.store != null) return
-        this.store = store
+    /**
+     * 登录成功后打开（或复用）本地库：密钥由 DbKeyManager 用刚登录的密码哈希派生/解出，
+     * 只有登录成功那一刻才拿得到，所以本地库不能在登录前初始化。
+     * 涉及磁盘 I/O + PBKDF2，切到 IO 线程，避免卡主线程。
+     */
+    private suspend fun openStore(ownerId: Int): ChatStore {
+        store?.let { if (storeOwnerId == ownerId) return it }
+        val ctx = appContext ?: error("应用上下文未初始化")
+        val passHash = lastHash ?: error("缺少登录密码哈希，无法派生本地库密钥")
+        val opened = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val key = DbKeyManager.getOrCreateRealKey(ctx, ownerId, passHash)
+            ChatStore(ctx, ownerId, key)
+        }
+        store = opened
+        storeOwnerId = ownerId
+        return opened
     }
+
+    // 本地库（ChatStore）现在需要密码派生的密钥才能打开，改由 attachAndOpenStore()
+    // 在登录成功后自行构建，不再由 MainActivity 提前注入。
 
     // ---------------- 登录 / 注册 ----------------
 
@@ -123,7 +151,9 @@ class MainViewModel : ViewModel() {
             return
         }
         lastTel = tel.trim()
-        lastHash = sha256Hex(pass) // 供断线自动重连使用
+        lastHash = sha256Hex(pass) // 仅供本地 DB 密钥派生使用
+        Prefs.clearTokenSession()  // 显式密码登录视为开始一个新的认证会话
+        Prefs.pendingRefreshRequestId = null
         pendingRemember = remember // 登录成功后据此决定是否持久化账号密码
         pendingPass = pass         // 记住时保存的明文密码（用于登录页回填）
         viewModelScope.launch {
@@ -133,7 +163,7 @@ class MainViewModel : ViewModel() {
                 return@launch
             }
             _loginTip.value = "登录中…"
-            client.login(tel.trim(), pass)
+            client.login(tel = tel.trim(), pass = pass, deviceId = Prefs.deviceId,)
         }
     }
 
@@ -181,6 +211,18 @@ class MainViewModel : ViewModel() {
         }
     }
 
+    /** 添加好友 */
+    fun sendAddFriendRequest(friNick: String) {
+        viewModelScope.launch { client.sendAddFriendRq(myNick.value, friNick) }
+    }
+
+    fun respondFriendRequest(result: Int) {
+        val req = _incomingFriendRequest.value ?: return
+        viewModelScope.launch { client.sendAddFriendRs(req.fromId, req.fromNick, myNick.value, result) }
+        _incomingFriendRequest.value = null
+    }
+
+
     /** 上拉加载更早历史：hasMore 且未在加载时才发请求（防抖，修复 6） */
     fun loadMoreHistory(peerId: Int) {
         if (roamHasMore[peerId] == false) return       // 已到头
@@ -203,7 +245,14 @@ class MainViewModel : ViewModel() {
     fun logout() {
         expectDisconnect = true
         Prefs.clearCredentialsIfNotRemember()
-        viewModelScope.launch { client.logout() }
+        val tokenSession = Prefs.loadTokenSession()
+        Prefs.clearTokenSession()
+        viewModelScope.launch {
+            if (tokenSession != null && client.connected) {
+                runCatching { client.revokeSession(tokenSession, Prefs.deviceId) }
+            }
+            client.disconnect()
+        }
         resetToLogin()
     }
 
@@ -368,17 +417,27 @@ class MainViewModel : ViewModel() {
         // 协议保证 fileId == msgId。兼容旧版离线补发产生的空 fileId 污染记录，
         // 否则会向服务端请求空字符串并被判定为“文件失效”。
         val effectiveFileId = msg.fileId.ifBlank { msg.msgId }
+        if (downloads.containsKey(effectiveFileId)) {
+            notify("文件正在下载，请勿重复点击")
+            return
+        }
         if (msg.fileId.isBlank()) {
             viewModelScope.launch { store?.repairFileId(client.myId, msg.msgId, effectiveFileId) }
         }
         val dir = java.io.File(ctx.filesDir, "file").apply { mkdirs() }
-        val part = java.io.File(dir, "${effectiveFileId}_${msg.fileName}.part")
+        // 展示名来自网络，物理文件名必须去掉路径成分，不能直接信任。
+        val safeName = java.io.File(msg.fileName).name.ifBlank { "file" }.take(255)
+        val part = java.io.File(dir, "${effectiveFileId}_$safeName.part")
+        // 协议只从完整块水位续传；进程在一次 write 中途被杀产生的残块不能直接 append。
+        if (part.length() < msg.fileSize && part.length() % Protocol.FILE_CHUNK_SIZE != 0L) {
+            part.delete()
+        }
         // I1（客户端对称修复）：.part 已经等于 fileSize 说明上次已经收完全部字节，只是没来得及
         // 落地为最终文件（比如中途被杀）。此时不应再请求下载（会重复追加末块导致 partSize 越界），
         // 直接把 .part 落地为最终文件即可。
         if (msg.fileSize > 0 && part.length() >= msg.fileSize) {
             viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                val finalFile = java.io.File(dir, "${effectiveFileId}_${msg.fileName}")
+                val finalFile = java.io.File(dir, "${effectiveFileId}_$safeName")
                 val ok = runCatching { part.renameTo(finalFile) }.getOrDefault(false)
                 if (ok) {
                     store?.updateFileLocalPath(client.myId, effectiveFileId, finalFile.absolutePath)
@@ -397,7 +456,7 @@ class MainViewModel : ViewModel() {
         val fromChunk = (part.length() / Protocol.FILE_CHUNK_SIZE).toInt()
         val out = java.io.FileOutputStream(part, /*append=*/true)
         downloads[effectiveFileId] = Download(
-            msg.peerId, effectiveFileId, msg.fileName, msg.fileSize, out, part,
+            msg.peerId, effectiveFileId, safeName, msg.fileSize, out, part,
         )
         updateFileStatus(msg.peerId, msg.msgId, ChatMessage.Status.SENDING) // 复用"进行中"
         viewModelScope.launch { client.fileDownload(effectiveFileId, fromChunk) }
@@ -419,6 +478,7 @@ class MainViewModel : ViewModel() {
                 is ImClient.Event.LoginResult -> when (e.result) {
                     Protocol.LOGIN_SUCCESS -> {
                         _loginTip.value = ""
+                        e.tokenSession?.let(Prefs::saveTokenSession)
                         // 登录成功：结束任何进行中的重连、清零退避状态
                         reconnecting = false
                         reconnectJob?.cancel()
@@ -434,18 +494,17 @@ class MainViewModel : ViewModel() {
                             Prefs.pass = null
                         }
                         _screen.value = Screen.FriendList
-                        store?.let { s ->
-                            viewModelScope.launch {
-                                val (msgs, convs) = s.hydrate(client.myId)
-                                android.util.Log.d("IMDBG", "hydrate done dbMsgs=${msgs.mapValues { it.value.size }} memMsgs=${_messages.value.mapValues { it.value.size }}")
-                                // 合并而非覆盖：hydrate 是异步 IO，其间登录补发的离线消息
-                                // 可能已经通过 append 进入内存，直接整体赋值会把这些新消息冲掉，
-                                // 导致“发送方回执已翻转、接收方却看不到补发消息”。
-                                // 以 DB 结果为基底，叠加当前内存里已有的消息（按 msgId 去重）。
-                                _messages.value = mergeMessages(msgs, _messages.value)
-                                _conversations.value = mergeConversations(convs, _conversations.value)
-                                android.util.Log.d("IMDBG", "after merge msgs=${_messages.value.mapValues { it.value.size }}")
-                            }
+                        viewModelScope.launch {
+                            val s = openStore(client.myId)
+                            val (msgs, convs) = s.hydrate(client.myId)
+                            android.util.Log.d("IMDBG", "hydrate done dbMsgs=${msgs.mapValues { it.value.size }} memMsgs=${_messages.value.mapValues { it.value.size }}")
+                            // 合并而非覆盖：hydrate 是异步 IO，其间登录补发的离线消息
+                            // 可能已经通过 append 进入内存，直接整体赋值会把这些新消息冲掉，
+                            // 导致“发送方回执已翻转、接收方却看不到补发消息”。
+                            // 以 DB 结果为基底，叠加当前内存里已有的消息（按 msgId 去重）。
+                            _messages.value = mergeMessages(msgs, _messages.value)
+                            _conversations.value = mergeConversations(convs, _conversations.value)
+                            android.util.Log.d("IMDBG", "after merge msgs=${_messages.value.mapValues { it.value.size }}")
                         }
                         // 消息漫游：登录后拉每会话最后一条恢复会话列表预览（换设备/重装后本地库空时尤为关键）
                         viewModelScope.launch { client.roamConversations() }
@@ -453,6 +512,40 @@ class MainViewModel : ViewModel() {
                     Protocol.LOGIN_NOTEXIT -> _loginTip.value = "登录失败：用户不存在"
                     else -> _loginTip.value = "登录失败：密码错误"
                 }
+
+                is ImClient.Event.TokenLoginResult -> {
+                    if (e.result == Protocol.LOGIN_SUCCESS) {
+                        reconnecting = false
+                        reconnectJob?.cancel()
+                        reconnectJob = null
+                        _loginTip.value = ""
+                        _toast.emit("已重新连接")
+                        viewModelScope.launch { client.roamConversations() }
+                    } else {
+                        Prefs.clearTokenSession()
+                        _toast.emit("登录状态已失效，请重新登录")
+                        resetToLogin()
+                    }
+                }
+
+                is ImClient.Event.TokenRefreshResult -> {
+                    refreshMutex.withLock { refreshRequestInFlight = false }
+                    val refreshed = e.tokenSession
+                    if (e.result == Protocol.REFRESH_TOKEN_SUCCESS && refreshed != null) {
+                        Prefs.saveTokenSession(refreshed)
+                        Prefs.pendingRefreshRequestId = null
+                        viewModelScope.launch {
+                            client.loginWithToken(refreshed, Prefs.deviceId)
+                        }
+                    } else {
+                        Prefs.pendingRefreshRequestId = null
+                        Prefs.clearTokenSession()
+                        _toast.emit("登录状态已过期，请重新登录")
+                        resetToLogin()
+                    }
+                }
+
+                is ImClient.Event.LogoutResult -> Unit
 
                 is ImClient.Event.UserOrFriendInfo -> {
                     if (e.userId == client.myId) {
@@ -488,12 +581,41 @@ class MainViewModel : ViewModel() {
 
                 is ImClient.Event.ChatSendResult -> {
                     android.util.Log.d("IMSEQ", "收到回执 peer=${e.peerId} msgId=${e.msgId} 服务端分配 seq=${e.seq} result=${e.result}")
+                    val status = when(e.result){
+                        Protocol.CHAT_RESULT_SUCC -> ChatMessage.Status.DELIVERED
+                        Protocol.CHAT_RESULT_NOT_FRIEND -> {
+                            _toast.emit("对方不是你的好友，消息未发送！")
+                            ChatMessage.Status.FAILED
+                        }
+                        else -> ChatMessage.Status.OFFLINE_STORED
+                    }
                     updateStatus(
-                        e.peerId, e.msgId,
-                        if (e.result == Protocol.CHAT_RESULT_SUCC)
-                            ChatMessage.Status.DELIVERED else ChatMessage.Status.OFFLINE_STORED,
+                        e.peerId,
+                        e.msgId,
+                        status,
                         e.seq,
                     )
+                }
+
+                is ImClient.Event.AddFriendRequestReceived -> {
+                    // 收到别人发来的好友请求：
+                    // 赋值给 StateFlow，UI 层（Activity/Fragment）监听到变化后，
+                    // 就可以弹出一个 Dialog 问用户“是否同意 fromNick 的好友请求”
+                    _incomingFriendRequest.value = IncomingFriendRequest(e.fromId, e.fromNick)
+                }
+
+                is ImClient.Event.AddFriendResult -> {
+                    // 收到了自己加别人后的回执：直接走全局 Toast 通道，不用单独建 SharedFlow
+                    val msg = when (e.result) {
+                        Protocol.ADD_FRIEND_AGREE -> "${e.peerNick} 已同意你的好友请求"
+                        Protocol.ADD_FRIEND_REJECT -> "${e.peerNick} 拒绝了你的好友请求"
+                        Protocol.ADD_FRIEND_OFFLINE -> "对方不在线，请求发送失败"
+                        Protocol.ADD_FRIEND_NOTEXIT -> "用户 ${e.peerNick} 不存在"
+                        Protocol.ADD_FRIEND_SELF -> "不能添加自己为好友"
+                        Protocol.ADD_FRIEND_ALREADY -> "对方 ${e.peerNick} 已经是你好友，请勿重复添加"
+                        else -> "好友请求处理失败"
+                    }
+                    notify(msg)
                 }
 
                 is ImClient.Event.RoamConversations -> {
@@ -567,6 +689,7 @@ class MainViewModel : ViewModel() {
 
                 ImClient.Event.KickedOffline -> {
                     expectDisconnect = true
+                    Prefs.clearTokenSession()
                     Prefs.clearCredentialsIfNotRemember()
                     client.disconnect()
                     _toast.emit("你的账号已在其他设备登录")
@@ -574,14 +697,13 @@ class MainViewModel : ViewModel() {
                 }
 
                 ImClient.Event.Disconnected -> {
+                    // 连接断开意味着本次请求不可能再收到响应；允许重连后用同一 requestId 重试。
+                    refreshMutex.withLock { refreshRequestInFlight = false }
                     if (!expectDisconnect && _screen.value != Screen.Login) {
-                        // 非预期断开：不直接回登录页，先尝试自动重连（IM 标配，弱网/瞬断可自愈）
-                        val tel = lastTel
-                        val hash = lastHash
-                        if (!tel.isNullOrEmpty() && !hash.isNullOrEmpty()) {
-                            startReconnect(tel, hash)
+                        if (Prefs.loadTokenSession() != null) {
+                            startReconnect()
                         } else {
-                            _toast.emit("与服务器断开连接")
+                            _toast.emit("登录状态已失效，请重新登录")
                             resetToLogin()
                         }
                     }
@@ -593,7 +715,8 @@ class MainViewModel : ViewModel() {
                     val up = uploads[e.msgId] ?: return@collect
                     if (e.result != Protocol.FILE_OFFER_OK) {
                         updateFileStatus(up.peerId, e.msgId, ChatMessage.Status.FAILED)
-                        notify("文件被拒绝（超限）"); uploads.remove(e.msgId); return@collect
+                        val msg = if (e.result == Protocol.FILE_OFFER_NOT_FRIEND) "对方不是你的好友，文件未发送" else "文件被拒绝（超限）"
+                        notify(msg); uploads.remove(e.msgId); return@collect
                     }
                     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                         runCatching {
@@ -618,6 +741,16 @@ class MainViewModel : ViewModel() {
                 }
                 is ImClient.Event.FileChunk -> {
                     val d = downloads[e.fileId] ?: return@collect
+                    val expectedIndex = (d.partFile.length() / Protocol.FILE_CHUNK_SIZE).toInt()
+                    val remaining = d.size - d.partFile.length()
+                    val expectedBytes = minOf(Protocol.FILE_CHUNK_SIZE.toLong(), remaining).toInt()
+                    if (e.chunkIndex != expectedIndex || remaining <= 0 || e.data.size != expectedBytes) {
+                        runCatching { d.out.close() }
+                        downloads.remove(e.fileId)
+                        updateFileStatus(d.peerId, e.fileId, ChatMessage.Status.RECEIVED)
+                        notify("文件分片校验失败，请重试")
+                        return@collect
+                    }
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { d.out.write(e.data); d.out.flush() }
                     val chunks = (d.partFile.length() / Protocol.FILE_CHUNK_SIZE).toInt()
                     updateFileProgress(d.peerId, e.fileId, chunks)
@@ -694,7 +827,12 @@ class MainViewModel : ViewModel() {
 
         if (updateConversation) {
             // 会话行内存即时刷新
-            val lastMsg = if (msg.kind == MsgKind.IMAGE) "[图片]" else msg.text
+            val lastMsg = when (msg.kind) {
+                MsgKind.IMAGE -> "[图片]"
+                MsgKind.FILE -> "[文件] ${msg.fileName}"
+                MsgKind.TEXT -> msg.text
+                else -> " "
+            }
             val old = _conversations.value[msg.peerId]
             val unread = (old?.unread ?: 0) + if (incrUnread && !msg.fromMe) 1 else 0
             _conversations.value = _conversations.value + (
@@ -820,11 +958,15 @@ class MainViewModel : ViewModel() {
 
     /**
      * 断线自动重连（指数退避）：弱网/瞬断时自愈，不打断用户停留在会话页。
-     * 每轮先建立 TCP 连接，再用保存的密码哈希重新登录；登录成功由 LoginResult 分支清零状态。
+     * 每轮先建立 TLS 连接，再用短期 access token 登录；过期时先轮换 refresh token。
      * 达到最大尝试次数仍失败才回登录页。
      */
-    private fun startReconnect(tel: String, hash: String) {
+    private fun startReconnect() {
         if (reconnecting) return // 已在重连，避免并发
+        if (Prefs.loadTokenSession() == null) {
+            resetToLogin()
+            return
+        }
         reconnecting = true
         reconnectJob?.cancel()
         reconnectJob = viewModelScope.launch {
@@ -840,9 +982,34 @@ class MainViewModel : ViewModel() {
                 client.disconnect() // 清掉可能的半开连接
                 val ok = runCatching { client.connect(ImClient.DEFAULT_HOST) }.getOrDefault(false)
                 if (ok) {
-                    // 连接成功即发起重新登录；成功与否由 LoginResult 事件驱动
-                    client.loginWithHash(tel, hash)
-                    // 给服务端一轮登录往返时间；若成功，reconnecting 会被 LoginResult 置 false
+                    val session = Prefs.loadTokenSession() ?: run {
+                        resetToLogin()
+                        return@launch
+                    }
+                    val nowSeconds = System.currentTimeMillis() / 1000L
+                    if (session.accessExpiresAt > nowSeconds + 30L) {
+                        client.loginWithToken(session, Prefs.deviceId)
+                    } else if (session.refreshExpiresAt > nowSeconds) {
+                        refreshMutex.withLock {
+                            if (refreshRequestInFlight) return@withLock
+                            val requestId = Prefs.pendingRefreshRequestId
+                                ?: UUID.randomUUID().toString().also {
+                                    Prefs.pendingRefreshRequestId = it
+                                }
+                            refreshRequestInFlight = true
+                            try {
+                                client.refreshToken(session, Prefs.deviceId, requestId)
+                            } catch (error: Throwable) {
+                                refreshRequestInFlight = false
+                                throw error
+                            }
+                        }
+                    } else {
+                        Prefs.clearTokenSession()
+                        _toast.emit("登录状态已过期，请重新登录")
+                        resetToLogin()
+                        return@launch
+                    }
                     kotlinx.coroutines.delay(3000L)
                     if (!reconnecting) return@launch // 登录成功已清零
                     // 否则继续下一轮退避重试
@@ -859,8 +1026,12 @@ class MainViewModel : ViewModel() {
 
     private fun resetToLogin() {
         reconnecting = false
+        refreshRequestInFlight = false
         reconnectJob?.cancel()
         reconnectJob = null
+        store?.close()
+        store = null
+        storeOwnerId = null
         loadedMinSeq.clear()
         roamHasMore.clear()
         roamLoading.clear()
@@ -876,6 +1047,9 @@ class MainViewModel : ViewModel() {
 
     override fun onCleared() {
         client.disconnect()
+        store?.close()
+        store = null
+        storeOwnerId = null
     }
 
     companion object {

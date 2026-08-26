@@ -12,7 +12,6 @@
 // 关停：SIGINT/SIGTERM 或 stop() → 停 accept → 停 io → join 全部线程。
 
 #include <asio.hpp>
-
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -20,9 +19,11 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <asio/ssl.hpp>
 
 #include "Database.h"
 #include "Presence.h"
+#include "auth/TokenService.h"
 
 namespace imsrv {
 
@@ -31,8 +32,14 @@ class Dispatcher;
 
 class Server {
 public:
-    Server(std::uint16_t port, int ioThreadCount, int dbWorkers,
-           std::string dbPath, std::string uploadDir);
+    Server(std::uint16_t port, 
+            int ioThreadCount, 
+            int dbWorkers,
+           std::string dbPath, 
+           std::string uploadDir,
+           std::string certPath, 
+           std::string keyPath
+        );
     ~Server();
 
     Server(const Server&) = delete;
@@ -54,6 +61,11 @@ public:
     // 会话的业务 strand（构造 Session 时分配，同会话固定）
     using BizStrand = asio::strand<asio::thread_pool::executor_type>;
     std::shared_ptr<BizStrand> nextBizStrand();
+    
+    TokenService& tokenService()
+    {
+        return m_tokenService;
+    }
 
 private:
     void doAccept();
@@ -64,6 +76,9 @@ private:
     int m_dbWorkers;
     std::string m_dbPath;
     std::string m_uploadDir;
+    std::string m_certPath;
+    std::string m_keyPath;
+    asio::ssl::context m_sslContext;
 
     asio::io_context m_io;
     asio::ip::tcp::acceptor m_acceptor;
@@ -74,6 +89,7 @@ private:
     std::atomic<size_t> m_nextBiz{0};
 
     Database m_db;
+    TokenService m_tokenService;
     Presence m_presence;
     std::unique_ptr<Dispatcher> m_dispatcher;
 

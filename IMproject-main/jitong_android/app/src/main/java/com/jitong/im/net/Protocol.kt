@@ -6,33 +6,40 @@ package com.jitong.im.net
  * 线格式：[4B 大端包长(含协议号)][4B 小端协议号][pb payload]
  */
 object Protocol {
-    const val TCP_PORT = 24563
+    //tcp连接端口
+    const val TCP_PORT          = 24563
 
-    const val DEF_BASE = 1000
-    const val REGISTER_RQ = DEF_BASE + 0
-    const val REGISTER_RS = DEF_BASE + 1
-    const val LOGIN_RQ = DEF_BASE + 2
-    const val LOGIN_RS = DEF_BASE + 3
-    const val FRIEND_INFO = DEF_BASE + 4
-    const val CHAT_INFO_RQ = DEF_BASE + 5
-    const val CHAT_INFO_RS = DEF_BASE + 6
-    const val ADD_FRIEND_RQ = DEF_BASE + 7
-    const val ADD_FRIEND_RS = DEF_BASE + 8
-    const val FRIEND_OFFLINE = DEF_BASE + 9
-    const val HEARTBEAT_RQ = DEF_BASE + 10
-    const val HEARTBEAT_RS = DEF_BASE + 11
-    const val KICKED_OFFLINE = DEF_BASE + 12
-    const val ROAM_CONV_RQ = DEF_BASE + 13
-    const val ROAM_CONV_RS = DEF_BASE + 14
-    const val ROAM_MSG_RQ = DEF_BASE + 15
-    const val ROAM_MSG_RS = DEF_BASE + 16
+    const val DEF_BASE          = 1000
+    const val REGISTER_RQ       = DEF_BASE + 0
+    const val REGISTER_RS       = DEF_BASE + 1
+    const val LOGIN_RQ          = DEF_BASE + 2
+    const val LOGIN_RS          = DEF_BASE + 3
+    const val FRIEND_INFO       = DEF_BASE + 4
+    const val CHAT_INFO_RQ      = DEF_BASE + 5
+    const val CHAT_INFO_RS      = DEF_BASE + 6
+    const val ADD_FRIEND_RQ     = DEF_BASE + 7
+    const val ADD_FRIEND_RS     = DEF_BASE + 8
+    const val FRIEND_OFFLINE    = DEF_BASE + 9
+    const val HEARTBEAT_RQ      = DEF_BASE + 10
+    const val HEARTBEAT_RS      = DEF_BASE + 11
+    const val KICKED_OFFLINE    = DEF_BASE + 12
+    const val ROAM_CONV_RQ      = DEF_BASE + 13
+    const val ROAM_CONV_RS      = DEF_BASE + 14
+    const val ROAM_MSG_RQ       = DEF_BASE + 15
+    const val ROAM_MSG_RS       = DEF_BASE + 16
+    const val FILE_OFFER_RQ     = DEF_BASE + 17
+    const val FILE_OFFER_RS     = DEF_BASE + 18
+    const val FILE_CHUNK_RQ     = DEF_BASE + 19
+    const val FILE_COMPLETE_RQ  = DEF_BASE + 20
+    const val FILE_PROGRESS_RS  = DEF_BASE + 21
+    const val FILE_DOWNLOAD_RQ  = DEF_BASE + 22
+    const val TOKEN_LOGIN_RQ    = DEF_BASE + 23
+    const val TOKEN_LOGIN_RS    = DEF_BASE + 24
+    const val TOKEN_REFRESH_RQ  = DEF_BASE + 25
+    const val TOKEN_REFRESH_RS  = DEF_BASE + 26
+    const val LOGOUT_RQ         = DEF_BASE + 27
+    const val LOGOUT_RS         = DEF_BASE + 28
 
-    const val FILE_OFFER_RQ = DEF_BASE + 17
-    const val FILE_OFFER_RS = DEF_BASE + 18
-    const val FILE_CHUNK_RQ = DEF_BASE + 19
-    const val FILE_COMPLETE_RQ = DEF_BASE + 20
-    const val FILE_PROGRESS_RS = DEF_BASE + 21
-    const val FILE_DOWNLOAD_RQ = DEF_BASE + 22
 
     /** 单包最大长度（含 4B 协议号），防恶意超大包 OOM */
     const val MAX_PACK_LEN = 10 * 1024 * 1024
@@ -45,20 +52,29 @@ object Protocol {
     const val LOGIN_SUCCESS = 0
     const val LOGIN_NOTEXIT = 1
     const val LOGIN_PASSERROR = 2
+    const val REFRESH_TOKEN_SUCCESS = 0
+    const val REFRESH_TOKEN_FAIL = 1
+    const val LOGOUT_SUCCESS = 0
+    const val LOGOUT_FAIL = 1
 
     const val STATUS_ONLINE = 0
     const val STATUS_OFFLINE = 1
 
     const val CHAT_RESULT_SUCC = 0 // 已送达（对方在线）
     const val CHAT_RESULT_FAIL = 1 // 对方离线，已转存
+    const val CHAT_RESULT_NOT_FRIEND = 2  //对方不是你的好友
+    const val CHAT_RESULT_SERVER_ERROR = 3   //消息假成功
 
     const val ADD_FRIEND_AGREE = 0
     const val ADD_FRIEND_REJECT = 1
     const val ADD_FRIEND_OFFLINE = 2
     const val ADD_FRIEND_NOTEXIT = 3
+    const val ADD_FRIEND_SELF = 4
+    const val ADD_FRIEND_ALREADY = 5
 
     const val FILE_OFFER_OK = 0
     const val FILE_OFFER_TOO_LARGE = 1
+    const val FILE_OFFER_NOT_FRIEND = 4
     const val FILE_ST_UPLOADING = 0
     const val FILE_ST_VERIFYING = 1
     const val FILE_ST_DONE = 2

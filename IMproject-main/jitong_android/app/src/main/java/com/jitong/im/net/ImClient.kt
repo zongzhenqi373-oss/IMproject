@@ -1,5 +1,7 @@
 package com.jitong.im.net
 
+import com.jitong.im.data.Prefs
+import com.jitong.im.data.crypto.TokenVault.TokenSession
 import im.proto.Im
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,7 +17,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.DataInputStream
 import java.net.InetSocketAddress
-import java.net.Socket
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocket
 
 /**
  * 即通 Android 纯 Kotlin 协议栈客户端（设计决策 D2：本期不引入 djinni/JNI）。
@@ -26,7 +29,10 @@ class ImClient {
 
     sealed interface Event {
         data class RegisterResult(val result: Int) : Event
-        data class LoginResult(val result: Int, val userId: Int) : Event
+        data class LoginResult(val result: Int, val userId: Int, val tokenSession: TokenSession?,) : Event
+        data class TokenLoginResult(val result: Int, val userId: Int, val accessExpiresAt: Long) : Event
+        data class TokenRefreshResult(val result: Int, val tokenSession: TokenSession?) : Event
+        data class LogoutResult(val result: Int) : Event
 
         /** 本人资料（userId == myId）或好友资料/上下线状态刷新 */
         data class UserOrFriendInfo(
@@ -52,6 +58,13 @@ class ImClient {
 
         /** 发送回执：peerId=接收方好友，result=CHAT_RESULT_SUCC(已送达)/FAIL(已转存离线)，seq=服务端分配的会话序列号 */
         data class ChatSendResult(val peerId: Int, val result: Int, val msgId: String, val seq: Long) : Event
+
+        /** 收到添加好友请求：fromId=发起者id，fromNick=发起者的nick，同意或者拒绝应该让服务器知道向谁发送添加好友回执*/
+        data class AddFriendRequestReceived(val fromId: Int, val fromNick: String) : Event
+
+        /** 好友添加回执：result=添加结果，peerId=被添加人的id，peerNick=被添加人的nick*/
+        data class AddFriendResult(val result: Int, val peerId: Int, val peerNick: String) : Event
+
 
         /** 漫游消息条目（会话列表末条 / 历史分页共用）。图片 bytes 为空表示预览占位（不落消息表）。 */
         data class RoamItem(
@@ -116,7 +129,7 @@ class ImClient {
         private set
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var socket: Socket? = null
+    private var socket: SSLSocket? = null
     private val writeLock = Mutex()
     private var heartbeatJob: kotlinx.coroutines.Job? = null
 
@@ -125,16 +138,66 @@ class ImClient {
         withContext(Dispatchers.IO) {
             if (connected) return@withContext true
             try {
-                val s = Socket()
-                s.connect(InetSocketAddress(host, port), 5000)
-                s.tcpNoDelay = true
-                s.keepAlive = true
-                socket = s
+                val factory = SSLContext
+                    .getDefault()
+                    .socketFactory
+
+                val sslSocket = factory
+                    .createSocket() as SSLSocket
+
+                sslSocket.connect(
+                    InetSocketAddress(host,port),
+                    5000,
+                )
+
+                sslSocket.enabledProtocols = arrayOf("TLSv1.3")
+
+                val parameters = sslSocket.sslParameters
+                parameters.endpointIdentificationAlgorithm = "HTTPS"
+                sslSocket.sslParameters = parameters
+
+                sslSocket.tcpNoDelay = true
+                sslSocket.keepAlive = true
+                sslSocket.soTimeout = 0
+
+                sslSocket.startHandshake()
+
+                /**打印日志，握手成功*/
+                val tlsSession = sslSocket.session
+                android.util.Log.i(
+                    "IM_TLS",
+                    "握手成功 " +
+                            "protocol=${tlsSession.protocol} " +
+                            "cipher=${tlsSession.cipherSuite} " +
+                            "peer=${tlsSession.peerHost}",
+                )
+                /**打印服务端证书*/
+                val certificate =
+                    tlsSession.peerCertificates.firstOrNull()
+                            as? java.security.cert.X509Certificate
+                android.util.Log.i(
+                    "IM_TLS",
+                    "服务端证书 " +
+                            "subject=${certificate?.subjectX500Principal?.name} " +
+                            "issuer=${certificate?.issuerX500Principal?.name} " +
+                            "expires=${certificate?.notAfter}",
+                )
+
+                socket = sslSocket
                 connected = true
+
                 startHeartbeat()
-                scope.launch { readLoop(s) }
+                scope.launch {
+                    readLoop(sslSocket)
+                }
+
                 true
             } catch (e: Exception) {
+                android.util.Log.e(
+                    "IM_TLS",
+                    "TLS连接失败",
+                    e,
+                )
                 closeQuietly()
                 false
             }
@@ -149,21 +212,47 @@ class ImClient {
         send(Protocol.REGISTER_RQ, rq.toByteArray())
     }
 
-    suspend fun login(tel: String, pass: String) {
+    suspend fun login(
+        tel: String,
+        pass: String,
+        deviceId: String,
+    ) {
         val rq = Im.LoginRq.newBuilder()
             .setTel(tel)
             .setPass(sha256Hex(pass))
+            .setDeviceId(deviceId)
+            .setDeviceName("${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+            .setClientVersion("android-0.5.0")
             .build()
+
         send(Protocol.LOGIN_RQ, rq.toByteArray())
     }
 
-    /** 用本地保存的密码哈希直接登录（自动登录场景，明文不出 MMKV） */
-    suspend fun loginWithHash(tel: String, passHash: String) {
-        val rq = Im.LoginRq.newBuilder()
-            .setTel(tel)
-            .setPass(passHash)
+    suspend fun loginWithToken(session: TokenSession, deviceId: String) {
+        val rq = Im.TokenLoginRq.newBuilder()
+            .setAccessToken(session.accessToken)
+            .setDeviceId(deviceId)
+            .setRequestId(java.util.UUID.randomUUID().toString())
             .build()
-        send(Protocol.LOGIN_RQ, rq.toByteArray())
+        send(Protocol.TOKEN_LOGIN_RQ, rq.toByteArray())
+    }
+
+    suspend fun refreshToken(session: TokenSession, deviceId: String, requestId: String) {
+        val rq = Im.RefreshTokenRq.newBuilder()
+            .setRefreshToken(session.refreshToken)
+            .setDeviceId(deviceId)
+            .setRequestId(requestId)
+            .build()
+        send(Protocol.TOKEN_REFRESH_RQ, rq.toByteArray())
+    }
+
+    suspend fun revokeSession(session: TokenSession, deviceId: String, allDevices: Boolean = false) {
+        val rq = Im.LogoutRq.newBuilder()
+            .setRefreshToken(session.refreshToken)
+            .setDeviceId(deviceId)
+            .setLogoutAllDevices(allDevices)
+            .build()
+        send(Protocol.LOGOUT_RQ, rq.toByteArray())
     }
 
     suspend fun sendChat(friId: Int, text: String, msgId: String) {
@@ -175,6 +264,28 @@ class ImClient {
             .setMsgId(msgId) // 客户端生成 UUID，漫游/去重幂等
             .build()
         send(Protocol.CHAT_INFO_RQ, rq.toByteArray())
+    }
+
+    /**发送添加好友申请*/
+    suspend fun sendAddFriendRq(myNick: String, friNick: String){
+        val rq = Im.AddFriendRq.newBuilder()
+            .setMyid(myId)
+            .setMynick(myNick)
+            .setFrinick(friNick)
+            .build()
+        send(Protocol.ADD_FRIEND_RQ,rq.toByteArray())
+    }
+
+    /**发送添加好友回执，回应一条添加好友申请*/
+    suspend fun sendAddFriendRs(destId: Int, destNick: String, myNick: String, result: Int){
+        val rs = Im.AddFriendRs.newBuilder()
+            .setMyid(myId)
+            .setMynick(myNick)
+            .setDestid(destId)
+            .setDestnick(destNick)
+            .setResult(result)
+            .build()
+        send(Protocol.ADD_FRIEND_RS, rs.toByteArray())
     }
 
     /** 发送图片：字节内联在 ChatInfoRq（设计 ≤500KB 压缩图，服务端落盘并转发/转存） */
@@ -263,7 +374,7 @@ class ImClient {
         )
     }
 
-    private suspend fun readLoop(s: Socket) {
+    private suspend fun readLoop(s: SSLSocket) {
         try {
             val input = DataInputStream(s.getInputStream())
             while (currentCoroutineContext().isActive) {
@@ -286,8 +397,35 @@ class ImClient {
             Protocol.LOGIN_RS -> {
                 val rs = Im.LoginRs.parseFrom(f.payload)
                 if (rs.result == Protocol.LOGIN_SUCCESS) myId = rs.userid
-                _events.emit(Event.LoginResult(rs.result, rs.userid))
+                val tokenSession = if (rs.result == Protocol.LOGIN_SUCCESS) {
+                    TokenSession(
+                        rs.userid, rs.sessionId, rs.accessToken, rs.refreshToken,
+                        rs.accessTokenExpireAt, rs.refreshTokenExpireAt,
+                    )
+                } else null
+                _events.emit(Event.LoginResult(rs.result, rs.userid, tokenSession))
             }
+
+            Protocol.TOKEN_LOGIN_RS -> {
+                val rs = Im.TokenLoginRs.parseFrom(f.payload)
+                if (rs.result == Protocol.LOGIN_SUCCESS) myId = rs.userid
+                _events.emit(Event.TokenLoginResult(rs.result, rs.userid, rs.accessTokenExpireAt))
+            }
+
+            Protocol.TOKEN_REFRESH_RS -> {
+                val rs = Im.RefreshTokenRs.parseFrom(f.payload)
+                val old = Prefs.loadTokenSession()
+                val tokenSession = if (rs.result == Protocol.REFRESH_TOKEN_SUCCESS && old != null) {
+                    TokenSession(
+                        old.userId, rs.sessionId, rs.accessToken, rs.refreshToken,
+                        rs.accessTokenExpireAt, rs.refreshTokenExpireAt,
+                    )
+                } else null
+                _events.emit(Event.TokenRefreshResult(rs.result, tokenSession))
+            }
+
+            Protocol.LOGOUT_RS ->
+                _events.emit(Event.LogoutResult(Im.LogoutRs.parseFrom(f.payload).result))
 
             Protocol.FRIEND_INFO -> {
                 val info = Im.FriendInfo.parseFrom(f.payload)
@@ -324,6 +462,19 @@ class ImClient {
                 val rs = Im.ChatInfoRs.parseFrom(f.payload)
                 // 回执里 myid=接收方好友，friid=自己
                 _events.emit(Event.ChatSendResult(rs.myid, rs.result, rs.msgId, rs.seq))
+            }
+
+            /**添加好友请求与回复*/
+            Protocol.ADD_FRIEND_RQ -> {
+                val rq = Im.AddFriendRq.parseFrom(f.payload)
+                //请求中需要传请求方id和请求方nick
+                _events.emit(Event.AddFriendRequestReceived(rq.myid, rq.mynick))
+            }
+
+            Protocol.ADD_FRIEND_RS -> {
+                val rs = Im.AddFriendRs.parseFrom(f.payload)
+                //回执中应该传的是被添加方id和被添加方nick，以及结果，回执中myid就是被添加方的id，mynick就是被添加方的nick
+                _events.emit(Event.AddFriendResult(rs.result,rs.myid,rs.mynick))
             }
 
             Protocol.ROAM_CONV_RS -> {
@@ -386,6 +537,11 @@ class ImClient {
             s.getOutputStream().write(bytes)
             s.getOutputStream().flush()
         }
+        /**打印协议号和长度*/
+        android.util.Log.d(
+            "IM_TLS",
+            "发送业务帧 type=$type payloadBytes=${payload.size} transport=TLS",
+        )
     }
 
     private fun closeQuietly() {

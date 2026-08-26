@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <asio.hpp>
+#include <asio/ssl.hpp>
 
 namespace imsrv {
 
@@ -54,7 +55,9 @@ inline std::uint32_t decodeType32(const char* p)
 class Session : public std::enable_shared_from_this<Session> {
 public:
     // biz：本会话的业务 strand（Server 按会话一致性分配，同会话固定）
-    Session(asio::ip::tcp::socket socket, Server& server,
+    Session(asio::ip::tcp::socket socket, 
+            Server& server,
+            asio::ssl::context& sslContext,
             std::shared_ptr<asio::strand<asio::thread_pool::executor_type>> biz);
     ~Session() = default;
 
@@ -72,17 +75,55 @@ public:
     int userId() const { return m_userId.load(); }
     void setUserId(int id) { m_userId.store(id); }
 
+    bool authenticated() const
+    {
+        return m_userId.load() > 0;
+    }
+
+    const std::string& authSessionId() const
+    {
+        return m_authSessionId;
+    }
+
+    const std::string& deviceId() const
+    {
+        return m_deviceId;
+    }
+
+    std::int64_t accessExpiresAt() const
+    {
+        return m_accessExpiresAt.load();
+    }
+
+    void bindAuth(
+        int userId,
+        std::string authSessionId,
+        std::string deviceId,
+        std::int64_t expiresAt
+    ) {
+        m_userId.store(userId);
+        m_authSessionId =
+            std::move(authSessionId);
+        m_deviceId =
+            std::move(deviceId);
+        m_accessExpiresAt.store(expiresAt);
+    }
+
+    void closeAfterWrite();
+
 private:
     void doReadHeader();
     void doReadBody(std::uint32_t bodyLen);
     void doWrite();
     void onClosed(); // 连接收尾（仅一次）
+    void doHandshake();   //握手逻辑
 
-    asio::ip::tcp::socket m_socket;
+    asio::ssl::stream<asio::ip::tcp::socket> m_streamsocket;
     // asio>=1.17 的 tcp::socket::executor_type 为 any_io_executor，strand 类型须匹配
     asio::strand<asio::any_io_executor> m_strand; // IO strand：读写处理器串行
     std::shared_ptr<asio::strand<asio::thread_pool::executor_type>> m_biz; // 业务 strand
     Server& m_server;
+    bool m_closeAfterWrite = false;
 
     std::atomic<int> m_userId{0};  // 业务 strand 写、io 线程读
     bool m_closedNotified = false; // 在 strand 上访问
@@ -90,6 +131,11 @@ private:
     std::array<char, 4> m_hdrBuf{};
     std::vector<char> m_bodyBuf;
     std::deque<std::shared_ptr<std::vector<char>>> m_writeQueue;
+
+    std::string m_authSessionId;
+    std::string m_deviceId;
+    std::atomic<std::int64_t>
+    m_accessExpiresAt{0};
 };
 
 } // namespace imsrv

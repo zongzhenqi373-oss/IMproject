@@ -19,6 +19,11 @@
 
 namespace im {
 
+struct ClientConfig {
+        std::string tlsServerName;
+        std::string caFile;
+    };
+
 class IStorage;
 class TcpTransport;
 
@@ -91,7 +96,7 @@ public:
 
 class ClientCore {
 public:
-    ClientCore();
+    explicit ClientCore(ClientConfig config);
     ~ClientCore();
 
     // 禁止拷贝
@@ -197,6 +202,7 @@ private:
     int m_iconId = 0;
     std::string m_nick;
     std::string m_feeling;
+
 };
 
 } // namespace im

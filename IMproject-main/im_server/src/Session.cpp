@@ -2,16 +2,19 @@
 #include "Server.h"
 
 #include <cstring>
+#include <iostream>
+#include <openssl/ssl.h>
+
 
 namespace imsrv {
 
 // 单包体上限（与 client_core MAX_PACK_LEN 一致）：防异常/恶意超大包
 constexpr std::uint32_t MAX_PACK_LEN = 10 * 1024 * 1024;
 
-Session::Session(asio::ip::tcp::socket socket, Server& server,
+Session::Session(asio::ip::tcp::socket socket, Server& server, asio::ssl::context& sslContext,
                  std::shared_ptr<asio::strand<asio::thread_pool::executor_type>> biz)
-    : m_socket(std::move(socket))
-    , m_strand(asio::make_strand(m_socket.get_executor()))
+    : m_streamsocket(std::move(socket),sslContext)
+    , m_strand(asio::make_strand(m_streamsocket.get_executor()))
     , m_biz(std::move(biz))
     , m_server(server)
 {
@@ -19,7 +22,7 @@ Session::Session(asio::ip::tcp::socket socket, Server& server,
 
 void Session::start()
 {
-    doReadHeader();
+    doHandshake();
 }
 
 void Session::deliver(std::uint32_t type, const std::string& payload)
@@ -42,7 +45,7 @@ void Session::close()
     auto self = shared_from_this();
     asio::post(m_strand, [this, self]() {
         asio::error_code ec;
-        m_socket.close(ec);
+        m_streamsocket.lowest_layer().close(ec);
         onClosed();
     });
 }
@@ -50,7 +53,7 @@ void Session::close()
 void Session::doReadHeader()
 {
     auto self = shared_from_this();
-    asio::async_read(m_socket, asio::buffer(m_hdrBuf),
+    asio::async_read(m_streamsocket, asio::buffer(m_hdrBuf),
         asio::bind_executor(m_strand,
             [this, self](const asio::error_code& ec, std::size_t) {
                 if (ec) { onClosed(); return; }
@@ -64,7 +67,7 @@ void Session::doReadBody(std::uint32_t bodyLen)
 {
     auto self = shared_from_this();
     m_bodyBuf.resize(bodyLen);
-    asio::async_read(m_socket, asio::buffer(m_bodyBuf.data(), bodyLen),
+    asio::async_read(m_streamsocket, asio::buffer(m_bodyBuf.data(), bodyLen),
         asio::bind_executor(m_strand,
             [this, self, bodyLen](const asio::error_code& ec, std::size_t) {
                 if (ec) { onClosed(); return; }
@@ -75,18 +78,34 @@ void Session::doReadBody(std::uint32_t bodyLen)
                     m_server.dispatchPacket(shared_from_this(), type, std::move(payload));
                 });
                 doReadHeader();
+                std::cout
+                << "[TLS] 收到已解密业务帧"
+                << " type=" << type
+                << " payloadBytes=" << bodyLen - 4
+                << std::endl;
             }));
 }
 
 void Session::doWrite()
 {
+    // 本函数只允许在 m_strand 中调用。队首 buffer 必须一直保留到 async_write
+    // 回调结束；提前 pop 会使 Asio 持有悬空 buffer，并让回调再次 pop 空队列。
+    if (m_writeQueue.empty()) {
+        if (m_closeAfterWrite) close();
+        return;
+    }
+
     auto self = shared_from_this();
-    asio::async_write(m_socket, asio::buffer(*m_writeQueue.front()),
+    asio::async_write(m_streamsocket, asio::buffer(*m_writeQueue.front()),
         asio::bind_executor(m_strand,
             [this, self](const asio::error_code& ec, std::size_t) {
                 if (ec) { onClosed(); return; }
                 m_writeQueue.pop_front();
-                if (!m_writeQueue.empty()) doWrite();
+                if (!m_writeQueue.empty()) {
+                    doWrite();
+                } else if (m_closeAfterWrite) {
+                    close();
+                }
             }));
 }
 
@@ -95,9 +114,48 @@ void Session::onClosed()
     // 在 strand 上执行，保证只收尾一次
     if (m_closedNotified) return;
     m_closedNotified = true;
+
     asio::error_code ec;
-    m_socket.close(ec);
+    m_streamsocket.lowest_layer().shutdown(
+        asio::ip::tcp::socket::shutdown_both,
+        ec
+    );
+    m_streamsocket.lowest_layer().close(ec);
     m_server.onSessionClosed(shared_from_this());
+}
+
+void Session::doHandshake()
+{
+    auto self = shared_from_this();
+
+    m_streamsocket.async_handshake(
+        asio::ssl::stream_base::server,
+        asio::bind_executor(
+            m_strand,
+            [this, self](const asio::error_code& ec) {
+                if (ec) {
+                    std::cerr << "handshake failed: " << ec.message() << std::endl;
+                    onClosed();
+                    return;
+                }
+
+                SSL* ssl = m_streamsocket.native_handle();
+                std::cout << "handshake success: " << SSL_get_version(ssl) << "  " 
+                << "cipher: " << SSL_get_cipher_name(ssl) << std::endl;
+                doReadHeader();
+            }
+        )
+    );
+}
+
+void Session::closeAfterWrite()
+{
+    auto self = shared_from_this();
+    asio::post(m_strand, [this, self]() {
+        m_closeAfterWrite = true;
+        if (m_writeQueue.empty()) 
+            close();
+    });
 }
 
 } // namespace imsrv

@@ -8,21 +8,30 @@
 #include <chrono>
 #include <filesystem>
 #include <iostream>
+#include <openssl/ssl.h>
+#include <ctime>
 
 namespace imsrv {
 
 using asio::ip::tcp;
 using im::proto::DEF_PROT_FRIEND_OFFLINE;
+using im::proto::DEF_PROT_LOGOUT_RQ;
+using im::proto::DEF_PROT_TOKEN_REFRESH_RQ;
 
 Server::Server(std::uint16_t port, int ioThreadCount, int dbWorkers,
-               std::string dbPath, std::string uploadDir)
+               std::string dbPath, std::string uploadDir,std::string certPath, 
+               std::string keyPath)
     : m_port(port)
     , m_ioThreadCount(ioThreadCount > 0 ? ioThreadCount : 4)
     , m_dbWorkers(dbWorkers > 0 ? dbWorkers : 2)
     , m_dbPath(std::move(dbPath))
     , m_uploadDir(std::move(uploadDir))
+    , m_certPath(std::move(certPath))
+    , m_keyPath(std::move(keyPath))
+    , m_sslContext(asio::ssl::context::tls_server)
     , m_acceptor(m_io)
     , m_signals(m_io)
+    , m_tokenService(m_db)
 {
 }
 
@@ -33,6 +42,51 @@ Server::~Server()
 
 bool Server::start()
 {
+    SSL_CTX* native = m_sslContext.native_handle();
+
+    if (SSL_CTX_set_min_proto_version(native, TLS1_3_VERSION) != 1 ||
+        SSL_CTX_set_max_proto_version(native, TLS1_3_VERSION) != 1) {
+        log("[server] 无法限制TLS版本为1.3");
+        return false;
+    }
+
+    // 不启用TLS 1.3的0-RTT。
+    // 当前不调用SSL_CTX_set_max_early_data()，默认即不接受early data。
+    // TLS 1.3普通1-RTT数据具备连接级防重放能力，但0-RTT不保证跨连接防重放，因此登录、刷新、发消息都不应使用0-RTT。
+
+    m_sslContext.set_options(
+    asio::ssl::context::default_workarounds |
+    asio::ssl::context::no_sslv2 |
+    asio::ssl::context::no_sslv3 |
+    asio::ssl::context::no_tlsv1 |
+    asio::ssl::context::no_tlsv1_1 |
+    asio::ssl::context::no_tlsv1_2 |
+    asio::ssl::context::no_compression
+    );
+
+    asio::error_code tlsEc;
+
+    m_sslContext.use_certificate_chain_file(m_certPath, tlsEc);
+    if (tlsEc) {
+        log("[server] 加载TLS证书失败 path=", m_certPath, " error=", tlsEc.message());
+        return false;
+    }
+
+    m_sslContext.use_private_key_file(
+        m_keyPath,
+        asio::ssl::context::pem,
+        tlsEc
+    );
+    if (tlsEc) {
+        log("[server] 加载TLS私钥失败 path=", m_keyPath, " error=", tlsEc.message());
+        return false;
+    }
+
+    if (SSL_CTX_check_private_key(native) != 1) {
+        log("[server] TLS证书与私钥不匹配");
+        return false;
+    }
+
     // 数据目录与上传目录
     std::error_code ec;
     std::filesystem::create_directories(std::filesystem::path(m_dbPath).parent_path(), ec);
@@ -156,7 +210,7 @@ void Server::doAccept()
             try {
                 log("[server] 新连接: ", socket.remote_endpoint().address().to_string());
             } catch (...) {}
-            auto session = std::make_shared<Session>(std::move(socket), *this, nextBizStrand());
+            auto session = std::make_shared<Session>(std::move(socket), *this, m_sslContext, nextBizStrand());
             session->start();
             doAccept();
         });
@@ -166,6 +220,21 @@ void Server::dispatchPacket(const std::shared_ptr<Session>& s, std::uint32_t typ
 {
     // 任何有效包都刷新活跃时间（心跳判定依据）
     if (s->userId() > 0) m_presence.touch(s->userId());
+
+    //服务端入口检查access token到期时间：必须在真正处理这个包之前拦截，
+    //否则过期后的第一个业务包仍会被完整执行（消息落库/转发）才被关连接
+    const bool authMaintenance =
+        type == DEF_PROT_TOKEN_REFRESH_RQ ||
+        type == DEF_PROT_LOGOUT_RQ;
+
+    if(s->authenticated() && !authMaintenance && s->accessExpiresAt() >0 && s->accessExpiresAt() < std::time(nullptr)) {
+        log(
+            "[认证] Access token 过期 uid=", s->userId()
+        );
+        s->close();
+        return;
+    }
+
     m_dispatcher->handle(s, type, payload);
 }
 

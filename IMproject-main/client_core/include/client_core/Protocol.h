@@ -29,29 +29,35 @@ constexpr int DEF_PROT_COUNT = 30;
 constexpr std::size_t MAX_PACK_LEN = 10 * 1024 * 1024; // 10MB
 
 // ---------------- 协议号 ----------------
-constexpr protType DEF_PROT_REGISTER_RQ    = DEF_BASE + 0; // 注册请求
-constexpr protType DEF_PROT_REGISTER_RS    = DEF_BASE + 1; // 注册回复
-constexpr protType DEF_PROT_LOGIN_RQ       = DEF_BASE + 2; // 登录请求
-constexpr protType DEF_PROT_LOGIN_RS       = DEF_BASE + 3; // 登录回复
-constexpr protType DEF_PROT_FRIEND_INFO    = DEF_BASE + 4; // 用户/好友信息
-constexpr protType DEF_PROT_CHAT_INFO_RQ   = DEF_BASE + 5; // 聊天请求
-constexpr protType DEF_PROT_CHAT_INFO_RS   = DEF_BASE + 6; // 聊天回复
-constexpr protType DEF_PROT_ADD_FRIEND_RQ  = DEF_BASE + 7; // 添加好友请求
-constexpr protType DEF_PROT_ADD_FRIEND_RS  = DEF_BASE + 8; // 添加好友回复
-constexpr protType DEF_PROT_FRIEND_OFFLINE = DEF_BASE + 9; // 下线通知
-constexpr protType DEF_PROT_HEARTBEAT_RQ   = DEF_BASE + 10; // 心跳请求（C→S，空 payload）
-constexpr protType DEF_PROT_HEARTBEAT_RS   = DEF_BASE + 11; // 心跳回复（S→C，空 payload）
-constexpr protType DEF_PROT_KICKED_OFFLINE = DEF_BASE + 12; // 被踢下线通知（S→C，空 payload）
-constexpr protType DEF_PROT_ROAM_CONV_RQ   = DEF_BASE + 13; // 会话列表漫游请求（C→S，登录后每会话末条）
-constexpr protType DEF_PROT_ROAM_CONV_RS   = DEF_BASE + 14; // 会话列表漫游响应（S→C）
-constexpr protType DEF_PROT_ROAM_MSG_RQ    = DEF_BASE + 15; // 会话历史分页请求（C→S）
-constexpr protType DEF_PROT_ROAM_MSG_RS    = DEF_BASE + 16; // 会话历史分页响应（S→C）
-constexpr protType DEF_PROT_FILE_OFFER_RQ    = DEF_BASE + 17; // 文件协商请求
-constexpr protType DEF_PROT_FILE_OFFER_RS    = DEF_BASE + 18; // 文件协商响应（含水位线）
-constexpr protType DEF_PROT_FILE_CHUNK_RQ    = DEF_BASE + 19; // 文件分片（上/下行复用）
-constexpr protType DEF_PROT_FILE_COMPLETE_RQ = DEF_BASE + 20; // 上传完成请求
-constexpr protType DEF_PROT_FILE_PROGRESS_RS = DEF_BASE + 21; // 传输进度
-constexpr protType DEF_PROT_FILE_DOWNLOAD_RQ = DEF_BASE + 22; // 下载请求
+constexpr protType DEF_PROT_REGISTER_RQ         = DEF_BASE + 0; // 注册请求
+constexpr protType DEF_PROT_REGISTER_RS         = DEF_BASE + 1; // 注册回复
+constexpr protType DEF_PROT_LOGIN_RQ            = DEF_BASE + 2; // 登录请求
+constexpr protType DEF_PROT_LOGIN_RS            = DEF_BASE + 3; // 登录回复
+constexpr protType DEF_PROT_FRIEND_INFO         = DEF_BASE + 4; // 用户/好友信息
+constexpr protType DEF_PROT_CHAT_INFO_RQ        = DEF_BASE + 5; // 聊天请求
+constexpr protType DEF_PROT_CHAT_INFO_RS        = DEF_BASE + 6; // 聊天回复
+constexpr protType DEF_PROT_ADD_FRIEND_RQ       = DEF_BASE + 7; // 添加好友请求
+constexpr protType DEF_PROT_ADD_FRIEND_RS       = DEF_BASE + 8; // 添加好友回复
+constexpr protType DEF_PROT_FRIEND_OFFLINE      = DEF_BASE + 9; // 下线通知
+constexpr protType DEF_PROT_HEARTBEAT_RQ        = DEF_BASE + 10; // 心跳请求（C→S，空 payload）
+constexpr protType DEF_PROT_HEARTBEAT_RS        = DEF_BASE + 11; // 心跳回复（S→C，空 payload）
+constexpr protType DEF_PROT_KICKED_OFFLINE      = DEF_BASE + 12; // 被踢下线通知（S→C，空 payload）
+constexpr protType DEF_PROT_ROAM_CONV_RQ        = DEF_BASE + 13; // 会话列表漫游请求（C→S，登录后每会话末条）
+constexpr protType DEF_PROT_ROAM_CONV_RS        = DEF_BASE + 14; // 会话列表漫游响应（S→C）
+constexpr protType DEF_PROT_ROAM_MSG_RQ         = DEF_BASE + 15; // 会话历史分页请求（C→S）
+constexpr protType DEF_PROT_ROAM_MSG_RS         = DEF_BASE + 16; // 会话历史分页响应（S→C）
+constexpr protType DEF_PROT_FILE_OFFER_RQ       = DEF_BASE + 17; // 文件协商请求
+constexpr protType DEF_PROT_FILE_OFFER_RS       = DEF_BASE + 18; // 文件协商响应（含水位线）
+constexpr protType DEF_PROT_FILE_CHUNK_RQ       = DEF_BASE + 19; // 文件分片（上/下行复用）
+constexpr protType DEF_PROT_FILE_COMPLETE_RQ    = DEF_BASE + 20; // 上传完成请求
+constexpr protType DEF_PROT_FILE_PROGRESS_RS    = DEF_BASE + 21; // 传输进度
+constexpr protType DEF_PROT_FILE_DOWNLOAD_RQ    = DEF_BASE + 22; // 下载请求
+constexpr protType DEF_PROT_TOKEN_LOGIN_RQ      = DEF_BASE + 23; // token登录请求
+constexpr protType DEF_PROT_TOKEN_LOGIN_RS      = DEF_BASE + 24; // token登录响应
+constexpr protType DEF_PROT_TOKEN_REFRESH_RQ    = DEF_BASE + 25; // token刷新请求
+constexpr protType DEF_PROT_TOKEN_REFRESH_RS    = DEF_BASE + 26; // token刷新响应
+constexpr protType DEF_PROT_LOGOUT_RQ           = DEF_BASE + 27; // 注销请求
+constexpr protType DEF_PROT_LOGOUT_RS           = DEF_BASE + 28; // 注销响应
 
 // ---------------- 字段软上限（字节，UTF-8） ----------------
 // 与原定长 struct 语义一致；pb 字符串不再定长，由应用层截断保护
@@ -75,11 +81,15 @@ constexpr int STATUS_OFFLINE = 1;
 
 constexpr int CHAT_RESULT_SUCC = 0;
 constexpr int CHAT_RESULT_FAIL = 1;
+constexpr int CHAT_RESULT_NOT_FRIEND = 2;
+constexpr int CHAT_RESULT_SERVER_ERROR = 3;
 
 constexpr int ADD_FRIEND_AGREE   = 0;
 constexpr int ADD_FRIEND_REJECT  = 1;
 constexpr int ADD_FRIEND_OFFLINE = 2;
 constexpr int ADD_FRIEND_NOTEXIT = 3;
+constexpr int ADD_FRIEND_SELF = 4;
+constexpr int ADD_FRIEND_ALREADY = 5;
 
 // 文件传输
 constexpr int FILE_OFFER_OK        = 0;
@@ -88,6 +98,7 @@ constexpr int FILE_ST_UPLOADING = 0;
 constexpr int FILE_ST_VERIFYING = 1;
 constexpr int FILE_ST_DONE      = 2;
 constexpr int FILE_ST_FAILED    = 3;
+constexpr int FILE_OFFER_NOT_FRIEND = 4;
 constexpr std::size_t FILE_CHUNK_SIZE = 256 * 1024;      // 256KB
 constexpr std::int64_t FILE_MAX_SIZE  = 100LL * 1024 * 1024; // 100MB
 
