@@ -6,8 +6,10 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 namespace imsrv {
 
@@ -25,6 +27,9 @@ private:
 
     void onRegisterRq(const std::shared_ptr<Session>& s, const std::string& payload);
     void onLoginRq(const std::shared_ptr<Session>& s, const std::string& payload);
+    void onTokenLoginRq(const std::shared_ptr<Session>& s, const std::string& payload);
+    void onTokenRefreshRq(const std::shared_ptr<Session>& s, const std::string& payload);
+    void onLogoutRq(const std::shared_ptr<Session>& s, const std::string& payload);
     void onChatRq(const std::shared_ptr<Session>& s, const std::string& payload);
     void onOfflineRq(const std::shared_ptr<Session>& s, const std::string& payload);
     void onHeartbeatRq(const std::shared_ptr<Session>& s, const std::string& payload);
@@ -42,10 +47,12 @@ private:
 
     // 工具：下发一条 FriendInfo（在线状态由 Presence 决定）
     void sendFriendInfo(const std::shared_ptr<Session>& to, int userId, int onlineStatus);
+    void activateAuthenticatedSession(const std::shared_ptr<Session>& s, int userId);
     // 图片落盘：uploads/img/<sha256>.<真实格式扩展名>（按魔数嗅探），返回相对路径
     std::string saveImage(const std::string& bytes);
 
     struct PendingUpload {
+        int senderId = 0; // 上传任务必须绑定创建它的登录 Session，防止其他账号注入/完成分片
         int receiverId = 0;
         std::string fileName;
         std::int64_t fileSize = 0;
@@ -54,6 +61,11 @@ private:
     };
     std::unordered_map<std::string, PendingUpload> m_pendingUploads; // key=file_id
     std::mutex m_uploadMtx; // 保护 m_pendingUploads（跨会话业务 strand 并发访问）
+
+    // 加好友：记录"确实转发过的请求" {requesterId, targetId}，onAddFriendRs 同意前据此核验，
+    // 防止在没有真实请求的情况下伪造同意、强行建立好友关系（进而绕过 isFriend 校验网关）
+    std::set<std::pair<int, int>> m_pendingFriendReq;
+    std::mutex m_pendingFriendMtx;
 
     Server& m_server;
     std::unordered_map<std::uint32_t, Handler> m_handlers;

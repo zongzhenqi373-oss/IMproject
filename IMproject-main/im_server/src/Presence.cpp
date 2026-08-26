@@ -9,6 +9,15 @@ void Presence::online(int userId, const std::shared_ptr<Session>& s)
     m_map[userId] = Entry{s, std::time(nullptr)};
 }
 
+std::shared_ptr<Session> Presence::replace(int userId, const std::shared_ptr<Session>& s)
+{
+    std::lock_guard<std::mutex> lock(m_mtx);
+    std::shared_ptr<Session> old;
+    if (auto it = m_map.find(userId); it != m_map.end()) old = it->second.sess.lock();
+    m_map[userId] = Entry{s, std::time(nullptr)};
+    return old;
+}
+
 void Presence::offline(int userId, const std::shared_ptr<Session>& s)
 {
     std::lock_guard<std::mutex> lock(m_mtx);

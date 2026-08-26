@@ -18,6 +18,11 @@ public:
     // 登录上线（重复登录时调用方负责先踢旧连接）
     void online(int userId, const std::shared_ptr<Session>& s);
 
+    // 原子地把 userId 的在线映射替换成 s，返回被替换掉的旧 session（没有则为 nullptr）。
+    // 比"先 get() 再 online()"更安全：两步分开会有并发登录竞态窗口，
+    // 两个连接都读到旧值为空/旧连接后各自 online()，导致谁都没被踢下线。
+    std::shared_ptr<Session> replace(int userId, const std::shared_ptr<Session>& s);
+
     // 下线：仅当 map 中记录的就是这个 session 时才摘除（防新连接被误摘）
     void offline(int userId, const std::shared_ptr<Session>& s);
 
