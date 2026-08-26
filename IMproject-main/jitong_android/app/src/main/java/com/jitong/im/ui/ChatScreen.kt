@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -54,6 +55,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jitong.im.util.ImageCodec
+import com.jitong.im.ui.theme.JitongBlue
+import com.jitong.im.ui.theme.PageBackground
+import com.jitong.im.ui.theme.PaleBlue
+import com.jitong.im.ui.theme.SecondaryText
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -110,6 +115,7 @@ fun ChatScreen(vm: MainViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
+                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = Color.White),
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Avatar(id = p.id, nick = p.nick, size = 36.dp)
@@ -119,13 +125,13 @@ fun ChatScreen(vm: MainViewModel) {
                             Text(
                                 if (p.online) "在线" else "离线",
                                 fontSize = 12.sp,
-                                color = if (p.online) Color(0xFF07C160) else Color.Gray,
+                                color = if (p.online) JitongBlue else SecondaryText,
                             )
                         }
                     }
                 },
                 navigationIcon = {
-                    TextButton(onClick = { vm.backToFriends() }) { Text("返回") }
+                    TextButton(onClick = { vm.backToFriends() }) { Text("‹", fontSize = 32.sp) }
                 },
             )
         },
@@ -134,7 +140,7 @@ fun ChatScreen(vm: MainViewModel) {
             Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(Color(0xFFEDEDED)) // 灰底衬托白色对方气泡
+                .background(PageBackground)
                 .imePadding(),
         ) {
             LazyColumn(
@@ -143,6 +149,7 @@ fun ChatScreen(vm: MainViewModel) {
                     .weight(1f)
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 22.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(conv, key = { it.msgId }) { msg ->
@@ -154,7 +161,7 @@ fun ChatScreen(vm: MainViewModel) {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFFF7F7F7))
+                    .background(Color.White)
                     .padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -177,7 +184,7 @@ fun ChatScreen(vm: MainViewModel) {
                             if (showPanel) keyboard?.hide()
                         },
                     contentAlignment = Alignment.Center,
-                ) { Text(if (showPanel) "×" else "＋", fontSize = 22.sp, color = Color(0xFF07C160)) }
+                ) { Text(if (showPanel) "×" else "＋", fontSize = 22.sp, color = JitongBlue) }
                 Button(
                     onClick = {
                         vm.send(input)
@@ -192,7 +199,7 @@ fun ChatScreen(vm: MainViewModel) {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFFF7F7F7))
+                        .background(Color.White)
                         .padding(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(24.dp),
                 ) {
@@ -223,7 +230,7 @@ private fun PanelItem(label: String, onClick: () -> Unit) {
                 .clickable(onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
-            Text(label.take(1), fontSize = 24.sp, color = Color(0xFF07C160))
+            Text(label.take(1), fontSize = 24.sp, color = JitongBlue)
         }
         Spacer(Modifier.height(4.dp))
         Text(label, fontSize = 12.sp, color = Color.Gray)
@@ -251,8 +258,8 @@ private fun MessageRow(msg: ChatMessage, peerNick: String, myNick: String, myId:
                     Modifier
                         .widthIn(max = 260.dp)
                         .background(
-                            if (msg.fromMe) Color(0xFF95EC69) else Color.White,
-                            RoundedCornerShape(8.dp),
+                            if (msg.fromMe) PaleBlue else Color.White,
+                            RoundedCornerShape(14.dp),
                         )
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 ) { Text(msg.text) }
@@ -308,7 +315,7 @@ private fun FileBubble(msg: ChatMessage, onDownload: () -> Unit, onOpen: () -> U
     }
     val actionColor = when {
         failed -> Color(0xFFD93025)
-        downloaded || !msg.fromMe -> Color(0xFF07C160)
+        downloaded || !msg.fromMe -> JitongBlue
         else -> Color.Gray
     }
 
@@ -316,7 +323,7 @@ private fun FileBubble(msg: ChatMessage, onDownload: () -> Unit, onOpen: () -> U
         Modifier
             .width(260.dp)
             .height(76.dp)
-            .background(if (msg.fromMe) Color(0xFF95EC69) else Color.White, RoundedCornerShape(8.dp))
+            .background(if (msg.fromMe) PaleBlue else Color.White, RoundedCornerShape(14.dp))
             .clickable {
                 when {
                     failed -> onRetry()

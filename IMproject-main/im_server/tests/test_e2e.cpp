@@ -29,6 +29,11 @@ namespace {
 constexpr std::uint16_t TEST_PORT = 24680;
 const char* TEST_DB = "/tmp/im_server_e2e.db";
 const char* TEST_UPLOADS = "/tmp/im_server_e2e_uploads";
+const std::string TEST_CERT = IM_SERVER_TEST_CERT;
+const std::string TEST_KEY = IM_SERVER_TEST_KEY;
+const std::string TEST_SERVERNAME = "im.example.com";
+const im::ClientConfig testConfig{TEST_SERVERNAME, TEST_CERT};
+
 
 struct RecordingEvents : IClientEvents {
     std::mutex mtx;
@@ -119,7 +124,7 @@ int main()
     std::remove((std::string(TEST_DB) + "-wal").c_str());
     std::remove((std::string(TEST_DB) + "-shm").c_str());
 
-    imsrv::Server server(TEST_PORT, 2, 2, TEST_DB, TEST_UPLOADS);
+    imsrv::Server server(TEST_PORT, 2, 2, TEST_DB, TEST_UPLOADS, TEST_CERT, TEST_KEY);
     assert(server.start());
     std::this_thread::sleep_for(std::chrono::milliseconds(300)); // 等监听就绪
 
@@ -127,7 +132,7 @@ int main()
 
     // 注册新用户（密码会经 sha256 哈希后传输）
     RecordingEvents regEv;
-    ClientCore regClient;
+    ClientCore regClient(testConfig);
     regClient.setEventSink(&regEv);
     assert(regClient.connectToServer("127.0.0.1", TEST_PORT));
     regClient.sendRegister("新用户", "13900000001", "mypassword");
@@ -139,7 +144,7 @@ int main()
 
     // A（张三）登录
     RecordingEvents ea;
-    ClientCore a;
+    ClientCore a(testConfig);
     a.setEventSink(&ea);
     a.setHeartbeatIntervalMs(500);
     assert(a.connectToServer("127.0.0.1", TEST_PORT));
@@ -151,7 +156,7 @@ int main()
 
     // 密码错误应失败
     RecordingEvents badEv;
-    ClientCore bad;
+    ClientCore bad(testConfig);
     bad.setEventSink(&badEv);
     assert(bad.connectToServer("127.0.0.1", TEST_PORT));
     bad.sendLogin(kZhangsan.tel, "wrongpass");
@@ -160,7 +165,7 @@ int main()
 
     // B（李四）登录，好友列表应含在线的张三
     RecordingEvents eb;
-    ClientCore b;
+    ClientCore b(testConfig);
     b.setEventSink(&eb);
     b.setHeartbeatIntervalMs(500);
     assert(b.connectToServer("127.0.0.1", TEST_PORT));
@@ -200,7 +205,7 @@ int main()
     // A → B 离线消息 → B 重连后补发
     a.sendChatMessage(idB, "这是离线消息");
     RecordingEvents eb2;
-    ClientCore b2;
+    ClientCore b2(testConfig);
     b2.setEventSink(&eb2);
     assert(b2.connectToServer("127.0.0.1", TEST_PORT));
     b2.sendLogin(kLisi.tel, "123456");
@@ -212,12 +217,20 @@ int main()
 
     // 互踢：张三在第二个连接上再登录 → 旧连接 a 收到被踢
     RecordingEvents ea2;
-    ClientCore a2;
+    ClientCore a2(testConfig);
     a2.setEventSink(&ea2);
     assert(a2.connectToServer("127.0.0.1", TEST_PORT));
     a2.sendLogin(kZhangsan.tel, "123456");
     assert(ea2.waitFor([&] { return ea2.loginResult == LOGIN_SUCCESS; }));
     assert(ea.waitFor([&] { return ea.kicked == 0; }));
+
+    // 第三方账号（王五）：用于验证文件上传/下载不能只凭 fileId 越权。
+    RecordingEvents ec;
+    ClientCore c(testConfig);
+    c.setEventSink(&ec);
+    assert(c.connectToServer("127.0.0.1", TEST_PORT));
+    c.sendLogin("13800000003", "123456");
+    assert(ec.waitFor([&] { return ec.loginResult == LOGIN_SUCCESS; }));
 
     // ============ M3：图片消息（在线转发 + 服务端落盘 + 离线补发） ============
 
@@ -249,7 +262,7 @@ int main()
     a2.sendImageMessage(idB, imgBytes2, 32, 32);
 
     RecordingEvents eb3;
-    ClientCore b3;
+    ClientCore b3(testConfig);
     b3.setEventSink(&eb3);
     assert(b3.connectToServer("127.0.0.1", TEST_PORT));
     b3.sendLogin(kLisi.tel, "123456");
@@ -342,6 +355,10 @@ int main()
     assert(ea2.lastOffer.result == FILE_OFFER_OK);
     assert(ea2.lastOffer.receivedChunks == 0); // 新文件水位线 0
 
+    // 未参与该上传的第三方即使知道 fileId，也不能注入第 0 块。
+    c.sendFileChunk(fmsgId, 0, std::string(chunkSz, 'X'));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
     for (int i = 0; i < totalChunks; ++i) {
         size_t off = (size_t)i * chunkSz;
         size_t len = std::min((size_t)chunkSz, fileBytes.size() - off);
@@ -388,6 +405,13 @@ int main()
     assert(eb3.waitFor([&] {
         return eb3.downloadChunks.size() == 1 && eb3.downloadChunks[0].first == 1;
     }));
+
+    // 第三方不是文件消息的发送者或接收者：下载必须失败且不能收到任何字节。
+    ec.downloadChunks.clear();
+    ec.lastProgressStatus = -1;
+    c.sendFileDownload(fmsgId, 0);
+    assert(ec.waitFor([&] { return ec.lastProgressStatus == FILE_ST_FAILED; }));
+    assert(ec.downloadChunks.empty());
 
     // ============ M7 I1 回归：末块为部分块时重发 Offer 不应死锁 ============
     // 300KB 文件（2 块：256KB 整块 + 44KB 部分块）。发完两块（包含部分末块）后，
@@ -436,6 +460,7 @@ int main()
 
     a2.disconnect();
     b3.disconnect();
+    c.disconnect();
     server.stop();
 
     std::cout << "test_e2e PASSED" << std::endl;
