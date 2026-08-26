@@ -2,15 +2,18 @@
 // SQLite 数据访问层：连接池 + WAL 并发配置 + 全部 SQL
 // 对应考察点：服务端 db 字段/索引设计、SQLite 写并发（WAL + busy_timeout）
 //
-// 并发说明：SQLite 同时刻只允许一个写者。本类为连接池（每连接独立互斥锁），
-// 每个连接打开时执行 journal_mode=WAL + busy_timeout=5000，
-// 读写不互斥、写冲突等待而非立即报 SQLITE_BUSY。
+// 并发说明：SQLite 同时刻只允许一个写者。读操作走连接池（每连接独立互斥锁，WAL 下读写/
+// 读读互不阻塞）；写操作正在逐步收口到 DbWriteQueue（单写线程，见 DbWriteQueue.h）——
+// 迁移到 DbWriteQueue 的写方法不再需要自己写 BEGIN IMMEDIATE 来防并发竞态，因为任意时刻
+// 只可能有一个写操作在执行，这是架构上的天然保证。尚未迁移的写方法仍走连接池 + 事务兜底。
 
 #include <mutex>
 #include <string>
 #include <vector>
 #include <memory>
 #include <cstdint>
+
+#include "DbWriteQueue.h"
 
 struct sqlite3;
 
@@ -72,6 +75,7 @@ public:
 
     // ---------------- 资料/好友 ----------------
     bool getUser(int id, UserRecord& out);
+    bool isFriend(int idA, int idB);
     std::vector<FriendRecord> getFriends(int id);
     bool addFriendBidirectional(int idA, int idB);
     // 按昵称查用户 id（0=不存在）
@@ -95,25 +99,100 @@ public:
     // 按 msg_id 取单条消息（下载寻址：file_id==msg_id）；不存在返回 false
     bool getMessageByMsgId(const std::string& msgId, StoredMessage& out);
 
+    // ---------------- 认证 ----------------
+    struct AuthSessionRecord {
+        std::string sessionId;
+        std::string familyId;
+        int userId = 0;
+        std::string deviceId;
+        std::string accessHash;
+        std::int64_t accessExpiresAt = 0;
+        std::string refreshHash;
+        std::int64_t refreshExpiresAt = 0;
+        int generation = 0;
+        bool revoked = false;
+    };
+
+    // 创建认证会话
+    bool createAuthSession(
+        const std::string& sessionId,
+        const std::string& familyId,
+        int userId,
+        const std::string& deviceId,
+        const std::string& accessHash,
+        std::int64_t accessExpiresAt,
+        const std::string& refreshHash,
+        std::int64_t refreshExpiresAt
+    );
+
+    // 根据 access_hash 查会话
+    bool findByAccessHash(
+        const std::string& accessHash,
+        AuthSessionRecord& out
+    );
+
+    // 根据 refresh_hash 查会话
+    bool findByRefreshHash(
+        const std::string& refreshHash,
+        AuthSessionRecord& out
+    );
+
+    // 刷新 refresh_token
+    bool rotateRefreshToken(
+        const AuthSessionRecord& oldSession,
+        const std::string& oldRefreshHash,
+        const std::string& newAccessHash,
+        std::int64_t newAccessExpiresAt,
+        const std::string& newRefreshHash,
+        std::int64_t newRefreshExpiresAt
+    );
+
+    // 检查 refresh_token 是否已使用
+    bool wasRefreshTokenUsed(
+        const std::string& refreshHash,
+        std::string& outFamilyId
+    );
+
+    // 撤销 token 家族；返回被撤销家族所属的 userId（找不到该家族则返回 0），
+    // 供调用方据此立即踢掉这个用户当前在线的连接，而不是只等它自然过期
+    int revokeTokenFamily(
+        const std::string& familyId
+    );
+
+    // 撤销会话
+    void revokeSession(
+        const std::string& sessionId
+    );
+
+    // 撤销用户所有会话
+    void revokeAllUserSessions(int userId);
+
 private:
     struct Conn {
         sqlite3* db = nullptr;
         std::mutex mtx;
     };
 
-    Conn& acquire(); // 轮询取连接
+    Conn& acquire(); // 轮询取连接（只读方法用）
     bool execOn(sqlite3* db, const char* sql);
 
     std::vector<std::unique_ptr<Conn>> m_pool;
     std::atomic<size_t> m_next{0};
+    DbWriteQueue m_writeQueue; // 单写线程；写方法逐步从 acquire() 迁移到这里
 };
 
-// conversation_id 生成：min(id)*K + max(id)，K 远大于用户数上限
+// 生成会话 id，小id在高32位，大id在低32位，防止id碰撞，保证唯一性
 inline std::int64_t makeConversationId(int idA, int idB)
 {
-    const std::int64_t lo = idA < idB ? idA : idB;
-    const std::int64_t hi = idA < idB ? idB : idA;
-    return lo * (1 << 20) + hi;
+    if(idA <= 0 || idB <= 0){
+        return 0;
+    }
+    
+    const std::uint32_t low = static_cast<std::uint32_t>(idA < idB ? idA : idB);
+    const std::uint32_t high = static_cast<std::uint32_t>(idA > idB ? idA : idB);
+    const std::uint64_t packed = (static_cast<std::int64_t>(low) << 32) | static_cast<std::int64_t>(high);
+
+    return static_cast<std::int64_t>(packed);
 }
 
 } // namespace imsrv
