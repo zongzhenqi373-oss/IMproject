@@ -13,11 +13,14 @@ import java.io.File
 /**
  * 消息仓储：ViewModel 内存态 ↔ Room 持久态的桥。
  * 图片字节写应用私有目录 filesDir/img/，库里只存路径（media_path 口径与服务端一致）。
+ * key：SQLCipher 真实数据库密钥，由 DbKeyManager 在登录成功后派生/解出，调用方负责传入。
  */
-class ChatStore(context: Context) {
+class ChatStore(context: Context, ownerId: Int, key: ByteArray) {
 
     private val appContext = context.applicationContext
-    private val db = AppDatabase.get(appContext)
+    private val db = AppDatabase.get(appContext, ownerId, key)
+
+    fun close() = AppDatabase.closeCurrent()
 
     /** 会话 id：min(id)*K + max(id)，双向同值，与服务端算法一致（K=1<<20） */
     fun conversationId(a: Int, b: Int): Long {

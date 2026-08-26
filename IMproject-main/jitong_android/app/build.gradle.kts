@@ -77,6 +77,11 @@ dependencies {
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
 
+    // SQLCipher：给 Room 落盘的 SQLite 文件加密（真实密钥由 DbKeyManager 用登录密码派生的
+    // 包装密钥保护，不依赖 Android Keystore，纯标准密码学原语，理论上可移植到其他平台）
+    implementation("net.zetetic:sqlcipher-android:4.6.1")
+    implementation("androidx.sqlite:sqlite:2.4.0")
+
     // MMKV：KV 凭证/配置（对齐 QQNT 双存储：MMKV=KV，Room=消息）
     implementation("com.tencent:mmkv-static:1.3.5")
 

@@ -11,7 +11,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.jitong.im.data.ChatStore
 import com.jitong.im.ui.ChatScreen
 import com.jitong.im.ui.FriendListScreen
 import com.jitong.im.ui.LoginScreen
@@ -28,9 +27,9 @@ class MainActivity : ComponentActivity() {
             JitongTheme {
                 val vm: MainViewModel = viewModel()
                 val appContext = applicationContext
-                // 仅首次组合调用一次，避免每次重组重复触发（attachStore 内部亦有幂等保护）
+                // 仅首次组合调用一次（attachContext/attachResolver 内部亦有幂等保护）。
+                // 本地库现在要密码派生的密钥才能打开，改由 MainViewModel 在登录成功后自行构建 ChatStore。
                 LaunchedEffect(Unit) {
-                    vm.attachStore(ChatStore(appContext))
                     vm.attachResolver(appContext.contentResolver)
                     vm.attachContext(appContext)
                 }
