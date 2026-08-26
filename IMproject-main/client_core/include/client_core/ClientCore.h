@@ -22,6 +22,7 @@ namespace im {
 struct ClientConfig {
         std::string tlsServerName;
         std::string caFile;
+        std::uint16_t httpPort = 0; // HTTP 文件服务端口；0 表示未设置时使用 TCP 端口+1（见 connectToServer）
     };
 
 class IStorage;
@@ -47,7 +48,9 @@ public:
     // 收到聊天消息（含离线补发），msg 为 UTF-8
     virtual void onChatMessage(int fromId, const std::string& msgUtf8) = 0;
 
-    // 收到图片消息（含离线补发）：imageBytes 为压缩后图片字节，w/h 为尺寸
+    // 收到图片消息（含离线补发）。M7 起图片改走 HTTP 文件服务，协议包只带元数据，
+    // 不再内联字节——本回调不再被调用，图片改经 onFileCard 统一下发，UI 据此调用
+    // downloadMedia() 按需下载。保留此接口仅为兼容旧的实现类，不建议新代码依赖。
     virtual void onImageMessage(int fromId, const std::string& imageBytes,
                                 int w, int h, const std::string& msgId) = 0;
 
@@ -88,10 +91,17 @@ public:
     // 传输进度（上传/下载共用）
     virtual void onFileProgress(const std::string& fileId, int received, int total, int status)
     { (void)fileId; (void)received; (void)total; (void)status; }
-    // 收到文件卡片（ChatInfoRq type=FILE，在线转发/离线补发共用）
+    // 收到文件/图片卡片（ChatInfoRq type=FILE/IMAGE，在线转发/离线补发/漫游共用）：
+    // 字节不再随包下发，contentType/sha256/isImage/w/h 供 UI 判断展示形式，
+    // 实际下载由 UI 按需调用 downloadMedia(fileId, ...)。
     virtual void onFileCard(int fromId, const std::string& fileId, const std::string& name,
-                            std::int64_t size, const std::string& msgId)
-    { (void)fromId; (void)fileId; (void)name; (void)size; (void)msgId; }
+                            std::int64_t size, const std::string& msgId,
+                            const std::string& contentType, const std::string& sha256,
+                            bool isImage, int imageWidth, int imageHeight)
+    {
+        (void)fromId; (void)fileId; (void)name; (void)size; (void)msgId;
+        (void)contentType; (void)sha256; (void)isImage; (void)imageWidth; (void)imageHeight;
+    }
 };
 
 class ClientCore {
@@ -124,8 +134,6 @@ public:
     void sendRegister(const std::string& nickUtf8, const std::string& tel, const std::string& pass);
     void sendLogin(const std::string& tel, const std::string& pass);
     void sendChatMessage(int friId, const std::string& msgUtf8);
-    // 发送图片消息：imageBytes 为压缩后图片字节（建议 ≤500KB），w/h 为尺寸
-    void sendImageMessage(int friId, const std::string& imageBytes, int w, int h);
     void sendAddFriendRequest(const std::string& friNickUtf8);
     // 回复添加好友请求：agree=true 同意，false 拒绝；destId/destNick 为请求发起人
     void answerAddFriend(int destId, const std::string& destNickUtf8, bool agree);
@@ -138,12 +146,23 @@ public:
     // 拉某会话比 beforeSeq 更早的 limit 条（首次传极大值拉最新，上拉传当前已加载最小 seq）
     void sendRoamMsgRq(int peerId, std::int64_t beforeSeq, int limit);
 
-    // ---------------- 文件传输（M7） ----------------
-    void sendFileOffer(const std::string& msgId, int receiverId, const std::string& name,
-                       std::int64_t size, int totalChunks, const std::string& sha256);
-    void sendFileChunk(const std::string& fileId, int index, const std::string& data);
-    void sendFileComplete(const std::string& fileId, const std::string& msgId);
-    void sendFileDownload(const std::string& fileId, int fromChunk);
+    // ---------------- 文件/图片传输（HTTP 文件服务，M7 起替代旧的分片协议） ----------------
+    // 进度回调：sentOrReceived/total 为字节数；仅供 UI 展示，可为空
+    using MediaProgress = std::function<void(std::int64_t sentOrReceived, std::int64_t total)>;
+
+    // 上传本地文件到 HTTP 文件服务（阻塞，边读边发不整体载入内存），成功返回 file_id、
+    // 失败返回空串。isImage=true 时以 image/* Content-Type 上传（服务端据此走内容寻址去重）。
+    std::string uploadMedia(const std::string& localPath, int receiverId, bool isImage,
+                            const MediaProgress& onProgress = nullptr);
+    // 从 HTTP 文件服务下载到本地路径（阻塞，边收边写不整体载入内存），成功返回 true
+    bool downloadMedia(const std::string& fileId, const std::string& destPath,
+                       const MediaProgress& onProgress = nullptr);
+    // uploadMedia 成功后，发一条 ChatInfoRq(type=IMAGE/FILE) 作为"已就绪"通知
+    // （复用在线转发/离线补发链路）；contentType/sha256 取 uploadMedia 的返回值，
+    // w/h 仅图片有意义，文件传 0
+    void sendFileMessage(int friId, const std::string& fileId, const std::string& fileName,
+                         std::int64_t size, const std::string& contentType,
+                         const std::string& sha256, bool isImage, int w, int h);
 
     // ---------------- 会话状态 ----------------
     int myId() const;
@@ -175,10 +194,6 @@ private:
     void onRoamConvRs(const char* data, std::size_t len);
     void onRoamMsgRs(const char* data, std::size_t len);
 
-    void onFileOfferRs(const char* data, std::size_t len);
-    void onFileChunkRq(const char* data, std::size_t len);
-    void onFileProgressRs(const char* data, std::size_t len);
-
     // ---------------- 心跳保活 ----------------
     void startHeartbeat();
     void stopHeartbeat();
@@ -202,6 +217,22 @@ private:
     int m_iconId = 0;
     std::string m_nick;
     std::string m_feeling;
+
+    // ---------------- HTTP 文件服务所需的连接/鉴权状态 ----------------
+    // TLS SNI/证书校验目标与 CA，跟 TCP TLS 连接用的是同一套（见 TcpTransport）
+    std::string m_tlsServerName;
+    std::string m_caFile;
+    std::uint16_t m_httpPort = 0;
+    // 实际拨号目标（connectToServer 传入的 ip/host），httplib 用 hostname_addr_map
+    // 让 SNI/证书校验走 m_tlsServerName、实际连接走这个地址，跟 TcpTransport 的做法一致
+    std::string m_host;
+    // access_token/device_id：HTTP 上传下载走 Authorization: Bearer 头，取自密码登录成功后
+    // LoginRs 返回的 access_token（有效期约 15 分钟）。client_core 目前未实现 Token 刷新/
+    // Token 登录流程（只有 im_server 和 Android 端接了双鉴权），access_token 过期后
+    // uploadMedia/downloadMedia 会失败，需要重新 sendLogin() 换新——这是已知限制，
+    // 完整支持要等 client_core 接入 TokenLoginRq/RefreshTokenRq 之后。
+    std::string m_accessToken;
+    std::string m_deviceId = "client-core-default";
 
 };
 

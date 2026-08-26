@@ -62,6 +62,9 @@ interface MessageDao {
     @Query("UPDATE messages SET localPath = :path, fileSize = :size WHERE ownerId = :ownerId AND msgId = :msgId")
     suspend fun updateOutgoingFile(ownerId: Int, msgId: String, path: String, size: Long)
 
+    @Query("UPDATE messages SET fileId=:fileId, contentType=:contentType, sha256=:sha256 WHERE ownerId=:ownerId AND msgId=:msgId")
+    suspend fun updateMediaMetadata(ownerId: Int, msgId: String, fileId: String, contentType: String, sha256: String)
+
     /** FTS 前缀匹配（simple 分词：英文按词、中文整串前缀） */
     @Query(
         """SELECT m.* FROM messages m JOIN messages_fts f ON m.msgId = f.msgId

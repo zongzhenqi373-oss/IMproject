@@ -52,13 +52,13 @@ struct RecordingEvents : IClientEvents {
     bool closed = false;
 
     struct ImageMsg { int fromId; std::string bytes; int w; int h; std::string msgId; };
-    std::vector<ImageMsg> images;
+    std::vector<ImageMsg> images; // M7 起图片不再内联字节，这个回调不会再被触发，保留仅为满足接口
 
-    // 文件收集
-    im::FileOfferInfo lastOffer; bool gotOffer = false;
-    std::vector<std::pair<int,std::string>> downloadChunks; // (chunkIndex, data)
-    int lastProgressStatus = -1; int lastProgressRecv = -1;
-    struct FileCard { int fromId; std::string fileId; std::string name; std::int64_t size; std::string msgId; };
+    // 文件/图片卡片收集（HTTP 文件服务：ChatInfoRq type=FILE/IMAGE 统一走 onFileCard）
+    struct FileCard {
+        int fromId; std::string fileId; std::string name; std::int64_t size; std::string msgId;
+        std::string contentType; std::string sha256; bool isImage; int w; int h;
+    };
     std::vector<FileCard> fileCards;
 
     // 漫游收集
@@ -89,18 +89,12 @@ struct RecordingEvents : IClientEvents {
         std::lock_guard<std::mutex> l(mtx); roamPages.push_back({peerId, msgs, hasMore, minSeq}); notify();
     }
 
-    void onFileOfferResult(const im::FileOfferInfo& i) override {
-        std::lock_guard<std::mutex> l(mtx); lastOffer = i; gotOffer = true; notify();
-    }
-    void onFileChunk(const std::string&, int idx, const std::string& d) override {
-        std::lock_guard<std::mutex> l(mtx); downloadChunks.emplace_back(idx, d); notify();
-    }
-    void onFileProgress(const std::string&, int recv, int, int status) override {
-        std::lock_guard<std::mutex> l(mtx); lastProgressRecv = recv; lastProgressStatus = status; notify();
-    }
     void onFileCard(int fromId, const std::string& fileId, const std::string& name,
-                    std::int64_t size, const std::string& msgId) override {
-        std::lock_guard<std::mutex> l(mtx); fileCards.push_back({fromId, fileId, name, size, msgId}); notify();
+                    std::int64_t size, const std::string& msgId, const std::string& contentType,
+                    const std::string& sha256, bool isImage, int w, int h) override {
+        std::lock_guard<std::mutex> l(mtx);
+        fileCards.push_back({fromId, fileId, name, size, msgId, contentType, sha256, isImage, w, h});
+        notify();
     }
 
     template <typename Pred>
@@ -124,7 +118,8 @@ int main()
     std::remove((std::string(TEST_DB) + "-wal").c_str());
     std::remove((std::string(TEST_DB) + "-shm").c_str());
 
-    imsrv::Server server(TEST_PORT, 2, 2, TEST_DB, TEST_UPLOADS, TEST_CERT, TEST_KEY);
+    imsrv::Server server(TEST_PORT, 2, 2, TEST_DB, TEST_UPLOADS, TEST_CERT, TEST_KEY,
+                          static_cast<std::uint16_t>(TEST_PORT + 1));
     assert(server.start());
     std::this_thread::sleep_for(std::chrono::milliseconds(300)); // 等监听就绪
 
@@ -232,6 +227,8 @@ int main()
     c.sendLogin("13800000003", "123456");
     assert(ec.waitFor([&] { return ec.loginResult == LOGIN_SUCCESS; }));
 
+    // 旧 TCP 内联图片/分片文件测试保留作迁移历史，但不再参与编译。
+#if 0
     // ============ M3：图片消息（在线转发 + 服务端落盘 + 离线补发） ============
 
     // 构造伪 PNG 图片字节（真实 PNG 魔数开头，>1KB，含 0 字节，验证二进制安全）
@@ -458,8 +455,37 @@ int main()
     a2.sendFileComplete(fmsgId3, fmsgId3);
     assert(ea2.waitFor([&] { return ea2.lastProgressStatus == FILE_ST_FAILED; }));
 
+#endif
+
+    // ============ M7：图片/文件统一走独立 HTTPS 文件服务 ============
+    const std::string mediaInput = "/tmp/im_http_e2e.png";
+    const std::string mediaOutput = "/tmp/im_http_e2e_download.png";
+    std::string png(4096, '\x5a');
+    png[0] = '\x89'; png[1] = 'P'; png[2] = 'N'; png[3] = 'G';
+    png[4] = '\x0d'; png[5] = '\x0a'; png[6] = '\x1a'; png[7] = '\x0a';
+    { std::ofstream out(mediaInput, std::ios::binary); out.write(png.data(), png.size()); }
+
+    const std::string mediaId = a2.uploadMedia(mediaInput, idB, true);
+    assert(!mediaId.empty());
+    a2.sendFileMessage(idB, mediaId, "photo.png", static_cast<std::int64_t>(png.size()),
+                       "image/png", im::sha256Hex(png), true, 64, 64);
+    assert(eb2.waitFor([&] {
+        for (const auto& card : eb2.fileCards)
+            if (card.fileId == mediaId && card.isImage && card.w == 64) return true;
+        return false;
+    }));
+
+    // 消息参与者可下载，第三方即使知道 file_id 也不能下载。
+    assert(b2.downloadMedia(mediaId, mediaOutput));
+    { std::ifstream in(mediaOutput, std::ios::binary);
+      std::string got((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+      assert(got == png); }
+    assert(!c.downloadMedia(mediaId, "/tmp/im_http_e2e_forbidden.png"));
+
+    std::remove(mediaInput.c_str());
+    std::remove(mediaOutput.c_str());
     a2.disconnect();
-    b3.disconnect();
+    b2.disconnect();
     c.disconnect();
     server.stop();
 

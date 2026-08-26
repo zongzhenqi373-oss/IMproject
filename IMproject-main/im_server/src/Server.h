@@ -29,16 +29,18 @@ namespace imsrv {
 
 class Session;
 class Dispatcher;
+class HttpFileServer;
 
 class Server {
 public:
-    Server(std::uint16_t port, 
-            int ioThreadCount, 
+    Server(std::uint16_t port,
+            int ioThreadCount,
             int dbWorkers,
-           std::string dbPath, 
+           std::string dbPath,
            std::string uploadDir,
-           std::string certPath, 
-           std::string keyPath
+           std::string certPath,
+           std::string keyPath,
+           std::uint16_t httpPort
         );
     ~Server();
 
@@ -57,6 +59,7 @@ public:
     Database& db() { return m_db; }
     Presence& presence() { return m_presence; }
     const std::string& uploadDir() const { return m_uploadDir; }
+    HttpFileServer* httpFileServer() { return m_httpFileServer.get(); }
 
     // 会话的业务 strand（构造 Session 时分配，同会话固定）
     using BizStrand = asio::strand<asio::thread_pool::executor_type>;
@@ -78,6 +81,7 @@ private:
     std::string m_uploadDir;
     std::string m_certPath;
     std::string m_keyPath;
+    std::uint16_t m_httpPort;
     asio::ssl::context m_sslContext;
 
     asio::io_context m_io;
@@ -92,6 +96,7 @@ private:
     TokenService m_tokenService;
     Presence m_presence;
     std::unique_ptr<Dispatcher> m_dispatcher;
+    std::unique_ptr<HttpFileServer> m_httpFileServer;
 
     std::thread m_hbThread;
     std::atomic<bool> m_running{false};

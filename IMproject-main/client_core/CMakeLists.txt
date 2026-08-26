@@ -29,11 +29,12 @@ add_library(client_core STATIC
 target_include_directories(client_core
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/asio/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib
             ${CMAKE_CURRENT_SOURCE_DIR}/src
             ${CMAKE_CURRENT_SOURCE_DIR}/../protocol
 )
 
-target_compile_definitions(client_core PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
+target_compile_definitions(client_core PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED CPPHTTPLIB_OPENSSL_SUPPORT)
 
 find_package(Threads REQUIRED)
 target_link_libraries(client_core PUBLIC Threads::Threads im_protocol)
@@ -56,14 +57,19 @@ find_package(SQLite3 REQUIRED)
 #添加openssl链接库
 find_package(OpenSSL REQUIRED)
 target_link_libraries(
-    client_core 
-    PUBLIC 
-        Threads::Threads 
-        im_protocol 
-        SQLite3::SQLite3 
-        OpenSSL::SSL 
+    client_core
+    PUBLIC
+        Threads::Threads
+        im_protocol
+        SQLite3::SQLite3
+        OpenSSL::SSL
         OpenSSL::Crypto
 )
+
+# cpp-httplib（httplib::SSLClient）在 macOS 上用系统信任库校验证书，需要显式链接这两个 framework
+if(APPLE)
+    target_link_libraries(client_core PUBLIC "-framework Security" "-framework CoreFoundation")
+endif()
 
 # ---------------- 单元测试 ----------------
 if(CLIENT_CORE_BUILD_TESTS)

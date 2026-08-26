@@ -1,6 +1,7 @@
 #include "Server.h"
 #include "Session.h"
 #include "Dispatcher.h"
+#include "HttpFileServer.h"
 #include "Log.h"
 #include "client_core/Protocol.h"
 #include "im.pb.h"
@@ -19,8 +20,8 @@ using im::proto::DEF_PROT_LOGOUT_RQ;
 using im::proto::DEF_PROT_TOKEN_REFRESH_RQ;
 
 Server::Server(std::uint16_t port, int ioThreadCount, int dbWorkers,
-               std::string dbPath, std::string uploadDir,std::string certPath, 
-               std::string keyPath)
+               std::string dbPath, std::string uploadDir,std::string certPath,
+               std::string keyPath, std::uint16_t httpPort)
     : m_port(port)
     , m_ioThreadCount(ioThreadCount > 0 ? ioThreadCount : 4)
     , m_dbWorkers(dbWorkers > 0 ? dbWorkers : 2)
@@ -28,6 +29,7 @@ Server::Server(std::uint16_t port, int ioThreadCount, int dbWorkers,
     , m_uploadDir(std::move(uploadDir))
     , m_certPath(std::move(certPath))
     , m_keyPath(std::move(keyPath))
+    , m_httpPort(httpPort)
     , m_sslContext(asio::ssl::context::tls_server)
     , m_acceptor(m_io)
     , m_signals(m_io)
@@ -119,6 +121,12 @@ bool Server::start()
 
     m_dispatcher = std::make_unique<Dispatcher>(*this);
 
+    m_httpFileServer = std::make_unique<HttpFileServer>(*this, m_httpPort, m_certPath, m_keyPath);
+    if (!m_httpFileServer->start()) {
+        log("[server] HTTP 文件服务启动失败 port=", m_httpPort);
+        return false;
+    }
+
     // 业务线程池 + 业务 strand 池
     m_dbPool = std::make_unique<asio::thread_pool>(m_dbWorkers);
     for (int i = 0; i < m_dbWorkers; ++i) {
@@ -156,6 +164,7 @@ bool Server::start()
     m_hbThread = std::thread(&Server::hbScanLoop, this);
 
     log("[server] 启动成功 port=", m_port,
+        " httpPort=", m_httpPort,
         " ioThreads=", m_ioThreadCount,
         " dbWorkers=", m_dbWorkers,
         " db=", m_dbPath);
@@ -177,6 +186,8 @@ void Server::stop()
 
     // 先停 running 标志：阻止 accept 错误路径重新武装监听、心跳扫描线程退出
     m_running = false;
+
+    if (m_httpFileServer) m_httpFileServer->stop();
 
     asio::error_code ec;
     m_acceptor.close(ec);

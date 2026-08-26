@@ -15,6 +15,7 @@
 #include <vector>
 
 #include <asio.hpp>
+#include <asio/ssl.hpp>
 #include "client_core/ClientCore.h"
 #include "client_core/Protocol.h"
 #include "im.pb.h"
@@ -27,8 +28,17 @@ namespace {
 
 // ---------------- 假服务端 ----------------
 // 行为对齐 IMServer：登录成功 → 回 LoginRs → 下发自资料 → 下发好友 → 补发一条"离线消息"
+// 真服务端强制 TLS，这里也要握手，否则测的不是 client_core 真实会走的那条连接路径（回归 #7）
 class FakeServer {
 public:
+    using SslSocket = asio::ssl::stream<tcp::socket>;
+
+    FakeServer() : m_sslContext(asio::ssl::context::tls_server)
+    {
+        m_sslContext.use_certificate_chain_file(CLIENT_CORE_TEST_CERT);
+        m_sslContext.use_private_key_file(CLIENT_CORE_TEST_KEY, asio::ssl::context::pem);
+    }
+
     bool start(std::uint16_t& outPort)
     {
         m_acceptor = std::make_unique<tcp::acceptor>(m_io, tcp::endpoint(tcp::v4(), 0));
@@ -51,9 +61,13 @@ public:
 private:
     void run()
     {
-        tcp::socket sock(m_io);
+        tcp::socket rawSock(m_io);
         asio::error_code ec;
-        m_acceptor->accept(sock, ec);
+        m_acceptor->accept(rawSock, ec);
+        if (ec) return;
+
+        SslSocket sock(std::move(rawSock), m_sslContext);
+        sock.handshake(asio::ssl::stream_base::server, ec);
         if (ec) return;
 
         for (;;) {
@@ -72,7 +86,7 @@ private:
         }
     }
 
-    bool handle(protType type, const char* payload, std::size_t payloadLen, tcp::socket& sock)
+    bool handle(protType type, const char* payload, std::size_t payloadLen, SslSocket& sock)
     {
         switch (type) {
         case DEF_PROT_REGISTER_RQ: {
@@ -135,7 +149,7 @@ private:
     }
 
     // 组帧：4B 大端包长 + 4B 小端协议号 + pb payload
-    bool sendPkt(tcp::socket& sock, protType type, const std::string& payload)
+    bool sendPkt(SslSocket& sock, protType type, const std::string& payload)
     {
         const std::uint32_t bodyLen = static_cast<std::uint32_t>(4 + payload.size());
         std::vector<char> buf(4 + bodyLen);
@@ -164,6 +178,7 @@ private:
     }
 
     asio::io_context m_io;
+    asio::ssl::context m_sslContext;
     std::unique_ptr<tcp::acceptor> m_acceptor;
     std::thread m_thread;
 };
@@ -208,6 +223,10 @@ struct RecordingEvents : IClientEvents {
 
 int main()
 {
+    // 测试证书 SAN 里带了 IP:127.0.0.1，直接用它做 tlsServerName，
+    // 跟 connectToServer("127.0.0.1", ...) 的目标保持一致（回归 #7：两者以前是脱节的）
+    const im::ClientConfig testConfig{"127.0.0.1", CLIENT_CORE_TEST_CERT};
+
     // ==================== 场景 A：正常登录/聊天/心跳保活/下线 ====================
     {
         FakeServer server;
@@ -215,7 +234,7 @@ int main()
         assert(server.start(port));
 
         RecordingEvents ev;
-        ClientCore core;
+        ClientCore core(testConfig);
         core.setEventSink(&ev);
         core.setHeartbeatIntervalMs(200); // 测试加速：200ms 心跳
         assert(core.connectToServer("127.0.0.1", port));
@@ -261,7 +280,7 @@ int main()
         assert(server.start(port));
 
         RecordingEvents ev;
-        ClientCore core;
+        ClientCore core(testConfig);
         core.setEventSink(&ev);
         core.setHeartbeatIntervalMs(200); // 超时阈值 = 3 × 200ms = 600ms
         assert(core.connectToServer("127.0.0.1", port));

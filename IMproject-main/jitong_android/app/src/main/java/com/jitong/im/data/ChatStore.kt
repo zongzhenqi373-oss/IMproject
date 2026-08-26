@@ -84,6 +84,11 @@ class ChatStore(context: Context, ownerId: Int, key: ByteArray) {
     suspend fun updateOutgoingFile(ownerId: Int, msgId: String, path: String, size: Long) =
         withContext(Dispatchers.IO) { db.messageDao().updateOutgoingFile(ownerId, msgId, path, size) }
 
+    suspend fun updateMediaMetadata(ownerId: Int, msgId: String, fileId: String, contentType: String, sha256: String) =
+        withContext(Dispatchers.IO) {
+            db.messageDao().updateMediaMetadata(ownerId, msgId, fileId, contentType, sha256)
+        }
+
     suspend fun clearUnread(ownerId: Int, peerId: Int) = withContext(Dispatchers.IO) {
         db.conversationDao().clearUnread(conversationId(ownerId, peerId))
     }
@@ -135,6 +140,7 @@ class ChatStore(context: Context, ownerId: Int, key: ByteArray) {
             },
             imageBytes = bytes, imgW = imgW, imgH = imgH, ts = ts, seq = seq,
             fileId = fileId, fileName = fileName, fileSize = fileSize,
+            contentType = contentType, sha256 = sha256,
             localPath = localPath, transferred = transferred,
             status = when (status) {
                 0 -> ChatMessage.Status.SENDING
@@ -160,6 +166,7 @@ class ChatStore(context: Context, ownerId: Int, key: ByteArray) {
         mediaPath = mediaPath,
         imgW = imgW, imgH = imgH, ts = ts, seq = seq,
         fileId = fileId, fileName = fileName, fileSize = fileSize,
+        contentType = contentType, sha256 = sha256,
         localPath = localPath, transferred = transferred,
         status = status.toDb(),
     )

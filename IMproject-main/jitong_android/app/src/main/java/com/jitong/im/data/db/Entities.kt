@@ -34,6 +34,8 @@ data class MessageEntity(
     val fileId: String = "",
     val fileName: String = "",
     val fileSize: Long = 0,
+    val contentType: String = "",
+    val sha256: String = "",
     val localPath: String? = null,   // 文件本地路径（.part 进行中 / 成品）
     val transferred: Int = 0,        // 已传/已收块数（进度 + 续传游标）
     val status: Int,              // 0发送中 1已送达 2已接收 3离线转存

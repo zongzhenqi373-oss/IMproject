@@ -71,6 +71,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.5")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.google.protobuf:protobuf-javalite:3.25.3")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("io.coil-kt:coil-compose:2.7.0")
 
     // Room：消息/会话本地库（FTS4 独立存储，同事务双写）
     implementation("androidx.room:room-runtime:2.6.1")

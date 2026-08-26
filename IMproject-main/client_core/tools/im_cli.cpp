@@ -7,12 +7,13 @@
 //   register <昵称> <手机号> <密码>     注册
 //   login <手机号> <密码>               登录（种子用户: 张三 13800000001 / 李四 13800000002 / 王五 13800000003，密码均 123456）
 //   send <好友id> <内容>                发文本
-//   sendimg <好友id> <图片路径>          发图片
+//   sendimg <好友id> <图片路径>          发图片（走 HTTP 文件服务上传）
+//   sendfile <好友id> <文件路径>         发文件（走 HTTP 文件服务上传）
 //   quit                              下线退出
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
-#include <fstream>
+#include <filesystem>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -20,12 +21,13 @@
 
 #include "client_core/ClientCore.h"
 #include "client_core/Protocol.h"
-#include "image_format.h"
 
 namespace {
 
 class CliEvents : public im::IClientEvents {
 public:
+    im::ClientCore* core = nullptr; // 下载文件/图片卡片时用，main() 里回填
+
     void onRegisterResult(int result) override
     {
         std::cout << "\n[注册结果] " << (result == im::proto::REGISTER_SUCC ? "成功"
@@ -54,11 +56,26 @@ public:
     }
     void onImageMessage(int fromId, const std::string& bytes, int w, int h, const std::string&) override
     {
-        const std::string path = "/tmp/im_cli_recv_" + std::to_string(fromId) + im::imageExtForBytes(bytes);
-        std::ofstream ofs(path, std::ios::binary);
-        ofs.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
-        std::cout << "\n[收到图片] 来自 " << fromId << " " << w << "x" << h
-                  << " 已存到 " << path << std::endl;
+        // M7 起图片走 onFileCard 统一下发，字节不再内联，这个回调不会再被触发
+        (void)fromId; (void)bytes; (void)w; (void)h;
+    }
+    void onFileCard(int fromId, const std::string& fileId, const std::string& name,
+                    std::int64_t size, const std::string& msgId, const std::string& contentType,
+                    const std::string&, bool isImage, int w, int h) override
+    {
+        (void)msgId; (void)contentType;
+        const std::string ext = isImage ? ".jpg" : "";
+        const std::string path = "/tmp/im_cli_recv_" + std::to_string(fromId) + "_" + fileId + ext;
+        if (core && core->downloadMedia(fileId, path)) {
+            std::cout << "\n[收到" << (isImage ? "图片" : "文件") << "] 来自 " << fromId
+                      << " " << name << " (" << size << " 字节"
+                      << (isImage ? (", " + std::to_string(w) + "x" + std::to_string(h)) : "")
+                      << ") 已下载到 " << path << std::endl;
+        } else {
+            std::cout << "\n[收到" << (isImage ? "图片" : "文件") << "卡片] 来自 " << fromId
+                      << " " << name << " (" << size << " 字节) file_id=" << fileId
+                      << "（下载失败或 core 未就绪）" << std::endl;
+        }
     }
     void onChatSendResult(int friId, int result) override
     {
@@ -90,7 +107,7 @@ public:
 void printHelp()
 {
     std::cout << "命令: register <昵称> <手机号> <密码> | login <手机号> <密码> | "
-                 "send <好友id> <内容> | sendimg <好友id> <图片路径> | quit" << std::endl;
+                 "send <好友id> <内容> | sendimg <好友id> <图片路径> | sendfile <好友id> <文件路径> | quit" << std::endl;
 }
 
 } // namespace
@@ -106,6 +123,7 @@ int main(int argc, char* argv[])
 
     im::ClientCore core({tlsServerName, caFile});
     CliEvents events;
+    events.core = &core;
     core.setEventSink(&events);
 
     if (!core.connectToServer(ip, port)) {
@@ -140,14 +158,24 @@ int main(int argc, char* argv[])
             int friId = 0;
             std::string path;
             iss >> friId >> path;
-            std::ifstream ifs(path, std::ios::binary | std::ios::ate);
-            if (!ifs) { std::cout << "打不开文件 " << path << std::endl; continue; }
-            const auto size = ifs.tellg();
-            std::string bytes(static_cast<std::size_t>(size), '\0');
-            ifs.seekg(0);
-            ifs.read(bytes.data(), size);
-            core.sendImageMessage(friId, bytes, 0, 0);
-            std::cout << "[发送图片] " << path << " (" << size << " 字节)" << std::endl;
+            const std::string fileId = core.uploadMedia(path, friId, /*isImage=*/true);
+            if (fileId.empty()) { std::cout << "上传失败 " << path << std::endl; continue; }
+            std::error_code ec;
+            const auto size = static_cast<std::int64_t>(std::filesystem::file_size(path, ec));
+            core.sendFileMessage(friId, fileId, std::filesystem::path(path).filename().string(),
+                                 size, "image/jpeg", "", /*isImage=*/true, 0, 0);
+            std::cout << "[发送图片] " << path << " (" << size << " 字节) file_id=" << fileId << std::endl;
+        } else if (cmd == "sendfile") {
+            int friId = 0;
+            std::string path;
+            iss >> friId >> path;
+            const std::string fileId = core.uploadMedia(path, friId, /*isImage=*/false);
+            if (fileId.empty()) { std::cout << "上传失败 " << path << std::endl; continue; }
+            std::error_code ec;
+            const auto size = static_cast<std::int64_t>(std::filesystem::file_size(path, ec));
+            core.sendFileMessage(friId, fileId, std::filesystem::path(path).filename().string(),
+                                 size, "application/octet-stream", "", /*isImage=*/false, 0, 0);
+            std::cout << "[发送文件] " << path << " (" << size << " 字节) file_id=" << fileId << std::endl;
         } else if (cmd == "quit" || cmd == "exit") {
             core.sendOfflineNotify();
             std::this_thread::sleep_for(std::chrono::milliseconds(300)); // 等下线包发出

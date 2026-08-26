@@ -46,12 +46,9 @@ constexpr protType DEF_PROT_ROAM_CONV_RQ        = DEF_BASE + 13; // 会话列表
 constexpr protType DEF_PROT_ROAM_CONV_RS        = DEF_BASE + 14; // 会话列表漫游响应（S→C）
 constexpr protType DEF_PROT_ROAM_MSG_RQ         = DEF_BASE + 15; // 会话历史分页请求（C→S）
 constexpr protType DEF_PROT_ROAM_MSG_RS         = DEF_BASE + 16; // 会话历史分页响应（S→C）
-constexpr protType DEF_PROT_FILE_OFFER_RQ       = DEF_BASE + 17; // 文件协商请求
-constexpr protType DEF_PROT_FILE_OFFER_RS       = DEF_BASE + 18; // 文件协商响应（含水位线）
-constexpr protType DEF_PROT_FILE_CHUNK_RQ       = DEF_BASE + 19; // 文件分片（上/下行复用）
-constexpr protType DEF_PROT_FILE_COMPLETE_RQ    = DEF_BASE + 20; // 上传完成请求
-constexpr protType DEF_PROT_FILE_PROGRESS_RS    = DEF_BASE + 21; // 传输进度
-constexpr protType DEF_PROT_FILE_DOWNLOAD_RQ    = DEF_BASE + 22; // 下载请求
+// DEF_BASE+17..22 曾用于文件分片协议（FileOfferRq/FileChunkRq/FileCompleteRq/
+// FileProgressRs/FileDownloadRq），已整体迁移到 HTTP 文件服务（HttpFileServer），
+// 协议号作废不再回收复用，避免旧客户端/文档里的编号被挪作他用造成混淆。
 constexpr protType DEF_PROT_TOKEN_LOGIN_RQ      = DEF_BASE + 23; // token登录请求
 constexpr protType DEF_PROT_TOKEN_LOGIN_RS      = DEF_BASE + 24; // token登录响应
 constexpr protType DEF_PROT_TOKEN_REFRESH_RQ    = DEF_BASE + 25; // token刷新请求
@@ -83,6 +80,7 @@ constexpr int CHAT_RESULT_SUCC = 0;
 constexpr int CHAT_RESULT_FAIL = 1;
 constexpr int CHAT_RESULT_NOT_FRIEND = 2;
 constexpr int CHAT_RESULT_SERVER_ERROR = 3;
+constexpr int CHAT_RESULT_FILE_NOT_OWNED = 4; // type=FILE/IMAGE 的 file_id 不属于当前发送者（见 SECURITY_REVIEW.md #8/#42）
 
 constexpr int ADD_FRIEND_AGREE   = 0;
 constexpr int ADD_FRIEND_REJECT  = 1;
@@ -91,15 +89,8 @@ constexpr int ADD_FRIEND_NOTEXIT = 3;
 constexpr int ADD_FRIEND_SELF = 4;
 constexpr int ADD_FRIEND_ALREADY = 5;
 
-// 文件传输
-constexpr int FILE_OFFER_OK        = 0;
-constexpr int FILE_OFFER_TOO_LARGE = 1;
-constexpr int FILE_ST_UPLOADING = 0;
-constexpr int FILE_ST_VERIFYING = 1;
-constexpr int FILE_ST_DONE      = 2;
-constexpr int FILE_ST_FAILED    = 3;
-constexpr int FILE_OFFER_NOT_FRIEND = 4;
-constexpr std::size_t FILE_CHUNK_SIZE = 256 * 1024;      // 256KB
+// 文件传输：分片协议已废弃（迁移到 HTTP 文件服务），仅保留通用媒体大小上限，
+// 供 HttpFileServer 的上传端点和 client_core 的上传封装共用同一个软上限。
 constexpr std::int64_t FILE_MAX_SIZE  = 100LL * 1024 * 1024; // 100MB
 
 // ---------------- 编码工具 ----------------

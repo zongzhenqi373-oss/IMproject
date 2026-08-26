@@ -8,7 +8,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
     entities = [MessageEntity::class, MessageFtsEntity::class, ConversationEntity::class],
-    version = 3, // v3：messages 表新增文件字段（fileId/fileName/fileSize/localPath/transferred）
+    version = 4,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -32,6 +32,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN contentType TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE messages ADD COLUMN sha256 TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         /**
          * 打开指定账号的加密本地库；key 由调用方通过 DbKeyManager 拿到（登录后才可用）。
          * 每个 ownerId 各自一个物理库文件（jitong_<ownerId>.db），互不共享密钥，
@@ -50,7 +57,7 @@ abstract class AppDatabase : RoomDatabase() {
             )
                 // Factory 会持有/使用传入的口令数组；传副本，避免影响调用方持有的 key。
                 .openHelperFactory(SupportOpenHelperFactory(key.copyOf()))
-                .addMigrations(MIGRATION_2_3)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                 // 演示项目：非预期升级路径仍直接重建本地库（消息可从服务端漫游/补发恢复）
                 .fallbackToDestructiveMigration()
                 .build()

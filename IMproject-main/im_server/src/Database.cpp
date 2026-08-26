@@ -244,6 +244,8 @@ bool Database::open(const std::string& dbPath, int poolSize)
         // 刷新令牌历史索引
         "CREATE INDEX IF NOT EXISTS idx_refresh_family "
         "ON auth_refresh_history(family_id);"
+        //建立文件id索引
+        "CREATE INDEX IF NOT EXISTS idx_msg_file_id ON messages(file_id);"
     );
     if (!schemaOk) return false;
     // 兼容旧数据库；重复执行时 duplicate column 错误可安全忽略。
@@ -764,6 +766,40 @@ bool Database::getMessageByMsgId(const std::string& msgId, StoredMessage& out)
     sqlite3_bind_text(st, 1, msgId.c_str(), -1, SQLITE_TRANSIENT);
     bool ok = false;
     if (sqlite3_step(st) == SQLITE_ROW) {
+        const unsigned char* mid = sqlite3_column_text(st, 0);
+        out.msgId = mid ? reinterpret_cast<const char*>(mid) : "";
+        out.senderId = sqlite3_column_int(st, 1);
+        out.receiverId = sqlite3_column_int(st, 2);
+        out.type = sqlite3_column_int(st, 3);
+        const unsigned char* content = sqlite3_column_text(st, 4);
+        const unsigned char* path = sqlite3_column_text(st, 5);
+        out.content = content ? reinterpret_cast<const char*>(content) : "";
+        out.mediaPath = path ? reinterpret_cast<const char*>(path) : "";
+        out.imgW = sqlite3_column_int(st, 6);
+        out.imgH = sqlite3_column_int(st, 7);
+        out.ts = sqlite3_column_int64(st, 8);
+        out.seq = sqlite3_column_int64(st, 9);
+        const unsigned char* fid = sqlite3_column_text(st, 10);
+        out.fileId = fid ? reinterpret_cast<const char*>(fid) : "";
+        out.fileSize = sqlite3_column_int64(st, 11);
+        ok = true;
+    }
+    sqlite3_finalize(st);
+    return ok;
+}
+
+bool Database::getMessageByFileId(const std::string& fileId, StoredMessage& out){
+    Conn& c = acquire();
+    std::lock_guard<std::mutex> lock(c.mtx);
+    sqlite3_stmt* st = nullptr;
+    if(sqlite3_prepare_v2(c.db,
+        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq, file_id, file_size "
+        "FROM messages WHERE file_id=?;",
+        -1, &st, nullptr) != SQLITE_OK) return false;
+    sqlite3_bind_text(st, 1, fileId.c_str(), -1, SQLITE_TRANSIENT);
+    bool ok = false;
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        // 按现有 getMessageByMsgId 的赋值逻辑填写 out
         const unsigned char* mid = sqlite3_column_text(st, 0);
         out.msgId = mid ? reinterpret_cast<const char*>(mid) : "";
         out.senderId = sqlite3_column_int(st, 1);

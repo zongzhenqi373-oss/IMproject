@@ -8,6 +8,7 @@ package com.jitong.im.net
 object Protocol {
     //tcp连接端口
     const val TCP_PORT          = 24563
+    const val HTTPS_FILE_PORT   = 24564
 
     const val DEF_BASE          = 1000
     const val REGISTER_RQ       = DEF_BASE + 0
@@ -27,12 +28,7 @@ object Protocol {
     const val ROAM_CONV_RS      = DEF_BASE + 14
     const val ROAM_MSG_RQ       = DEF_BASE + 15
     const val ROAM_MSG_RS       = DEF_BASE + 16
-    const val FILE_OFFER_RQ     = DEF_BASE + 17
-    const val FILE_OFFER_RS     = DEF_BASE + 18
-    const val FILE_CHUNK_RQ     = DEF_BASE + 19
-    const val FILE_COMPLETE_RQ  = DEF_BASE + 20
-    const val FILE_PROGRESS_RS  = DEF_BASE + 21
-    const val FILE_DOWNLOAD_RQ  = DEF_BASE + 22
+    // 1017..1022 已废弃并保留，媒体字节统一走独立 HTTPS 文件服务。
     const val TOKEN_LOGIN_RQ    = DEF_BASE + 23
     const val TOKEN_LOGIN_RS    = DEF_BASE + 24
     const val TOKEN_REFRESH_RQ  = DEF_BASE + 25
@@ -72,13 +68,5 @@ object Protocol {
     const val ADD_FRIEND_SELF = 4
     const val ADD_FRIEND_ALREADY = 5
 
-    const val FILE_OFFER_OK = 0
-    const val FILE_OFFER_TOO_LARGE = 1
-    const val FILE_OFFER_NOT_FRIEND = 4
-    const val FILE_ST_UPLOADING = 0
-    const val FILE_ST_VERIFYING = 1
-    const val FILE_ST_DONE = 2
-    const val FILE_ST_FAILED = 3
-    const val FILE_CHUNK_SIZE = 256 * 1024
     const val FILE_MAX_SIZE = 100L * 1024 * 1024
 }

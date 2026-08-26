@@ -9,6 +9,7 @@ import com.jitong.im.data.crypto.DbKeyManager
 import com.jitong.im.data.db.ConversationEntity
 import com.jitong.im.data.db.MessageEntity
 import com.jitong.im.net.ImClient
+import com.jitong.im.net.HttpMediaClient
 import com.jitong.im.net.Protocol
 import com.jitong.im.net.sha256Hex
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -47,6 +48,8 @@ data class ChatMessage(
     val fileId: String = "",
     val fileName: String = "",
     val fileSize: Long = 0,
+    val contentType: String = "",
+    val sha256: String = "",
     val localPath: String? = null,
     val transferred: Int = 0,
     val status: Status = Status.RECEIVED,
@@ -57,6 +60,7 @@ data class ChatMessage(
 class MainViewModel : ViewModel() {
 
     private val client = ImClient()
+    private val mediaClient = HttpMediaClient()
     private var store: ChatStore? = null
     private var storeOwnerId: Int? = null // store 是给哪个账号开的（换号登录时需要重开，不能沿用旧账号的 ChatStore）
 
@@ -273,15 +277,20 @@ class MainViewModel : ViewModel() {
         val peer = _chatPeer.value ?: return
         if (bytes.isEmpty()) return
         val msgId = UUID.randomUUID().toString()
+        val ctx = appContext ?: run { notify("应用尚未初始化"); return }
+        val local = java.io.File(ctx.filesDir, "img/outgoing/$msgId.jpg").also {
+            it.parentFile?.mkdirs(); it.writeBytes(bytes)
+        }
         append(
             ChatMessage(
                 msgId, peer.id, fromMe = true, kind = MsgKind.IMAGE,
-                imageBytes = bytes, imgW = w, imgH = h,
+                imageBytes = bytes, imgW = w, imgH = h, localPath = local.absolutePath,
+                fileName = "$msgId.jpg", fileSize = local.length(), contentType = "image/jpeg",
                 status = ChatMessage.Status.SENDING,
             ),
             incrUnread = false,
         )
-        viewModelScope.launch { client.sendImage(peer.id, bytes, w, h, msgId) }
+        uploadMedia(msgId, Upload(local, peer.id, "$msgId.jpg", local.length(), true, w, h))
     }
 
     /** 聊天记录搜索（FTS 前缀 + LIKE 子串） */
@@ -303,7 +312,10 @@ class MainViewModel : ViewModel() {
     // ---------------- 文件发送（发送方状态机 + 断点续传） ----------------
 
     /** 进行中的上传：先将 SAF 内容复制到应用私有文件，后续哈希/分片/重试都只读稳定本地副本。 */
-    private data class Upload(val file: java.io.File, val peerId: Int, val name: String, val size: Long, val totalChunks: Int)
+    private data class Upload(
+        val file: java.io.File, val peerId: Int, val name: String, val size: Long,
+        val isImage: Boolean = false, val width: Int = 0, val height: Int = 0,
+    )
     private val uploads = java.util.concurrent.ConcurrentHashMap<String, Upload>()
 
     @Volatile private var appResolver: android.content.ContentResolver? = null
@@ -325,7 +337,7 @@ class MainViewModel : ViewModel() {
         }
         val msgId = java.util.UUID.randomUUID().toString()
         append(ChatMessage(msgId, peer.id, fromMe = true, kind = MsgKind.FILE,
-            fileId = msgId, fileName = name, fileSize = size, localPath = uri.toString(),
+            fileName = name, fileSize = size, localPath = uri.toString(),
             status = ChatMessage.Status.SENDING), incrUnread = false)
         prepareLocalUpload(msgId, peer.id, name, uri, resolver)
     }
@@ -347,16 +359,9 @@ class MainViewModel : ViewModel() {
                 notify("原文件已不存在，请重新选择")
                 return
             }
-            val totalChunks = ((file.length() + Protocol.FILE_CHUNK_SIZE - 1) / Protocol.FILE_CHUNK_SIZE).toInt()
-            val up = Upload(file, msg.peerId, msg.fileName, file.length(), totalChunks)
+            val up = Upload(file, msg.peerId, msg.fileName, file.length())
             uploads[msg.msgId] = up
-            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                runCatching { beginFileOffer(msg.msgId, up) }
-                    .onFailure {
-                        notify("文件读取失败：${it.message ?: it.javaClass.simpleName}")
-                        updateFileStatus(msg.peerId, msg.msgId, ChatMessage.Status.FAILED)
-                    }
-            }
+            uploadMedia(msg.msgId, up)
         }
     }
 
@@ -374,11 +379,10 @@ class MainViewModel : ViewModel() {
                 val actualSize = local.length()
                 if (actualSize <= 0L) error("文件为空")
                 if (actualSize > Protocol.FILE_MAX_SIZE) error("文件超过100MB")
-                val totalChunks = ((actualSize + Protocol.FILE_CHUNK_SIZE - 1) / Protocol.FILE_CHUNK_SIZE).toInt()
-                val up = Upload(local, peerId, safeName, actualSize, totalChunks)
+                val up = Upload(local, peerId, safeName, actualSize)
                 uploads[msgId] = up
                 updateOutgoingFile(peerId, msgId, local.absolutePath, actualSize)
-                beginFileOffer(msgId, up)
+                uploadMedia(msgId, up)
             }.onFailure {
                 notify("文件读取失败：${it.message ?: it.javaClass.simpleName}")
                 updateFileStatus(peerId, msgId, ChatMessage.Status.FAILED)
@@ -386,9 +390,27 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    private suspend fun beginFileOffer(msgId: String, up: Upload) {
-        val sha = java.io.FileInputStream(up.file).use { com.jitong.im.net.sha256HexOfStream(it) }
-        client.fileOffer(msgId, up.peerId, up.name, up.size, up.totalChunks, sha)
+    private fun uploadMedia(msgId: String, up: Upload) {
+        uploads[msgId] = up
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val mime = if (up.isImage) "image/jpeg" else
+                    java.net.URLConnection.guessContentTypeFromName(up.name) ?: "application/octet-stream"
+                val result = mediaClient.upload(up.file, up.peerId, up.name, mime) { sent, total ->
+                    val percent = if (total > 0) (sent * 100 / total).toInt() else 0
+                    viewModelScope.launch { updateFileProgress(up.peerId, msgId, percent) }
+                }
+                client.sendMediaCard(
+                    up.peerId, result.fileId, up.name, result.size, result.contentType,
+                    result.sha256, up.isImage, up.width, up.height, msgId,
+                )
+                updateMediaMetadata(up.peerId, msgId, result.fileId, result.contentType, result.sha256)
+            }.onFailure {
+                uploads.remove(msgId)
+                updateFileStatus(up.peerId, msgId, ChatMessage.Status.FAILED)
+                notify("上传失败：${it.message ?: it.javaClass.simpleName}")
+            }
+        }
     }
 
     private fun queryNameSize(resolver: android.content.ContentResolver, uri: android.net.Uri): Pair<String, Long>? {
@@ -406,60 +428,38 @@ class MainViewModel : ViewModel() {
 
     // ---------------- 文件接收（接收方状态机 + 断点续传） ----------------
 
-    /** 进行中的下载：fileId -> 落盘中的 .part 文件信息 */
-    private data class Download(val peerId: Int, val fileId: String, val name: String, val size: Long,
-                                val out: java.io.OutputStream, val partFile: java.io.File)
-    private val downloads = mutableMapOf<String, Download>()
+    private val downloads = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     /** 用户点击下载：从本地已有的 .part 大小推算续传起点，向服务端请求剩余分片 */
     fun downloadFile(msg: ChatMessage) {
         val ctx = appContext ?: return
-        // 协议保证 fileId == msgId。兼容旧版离线补发产生的空 fileId 污染记录，
-        // 否则会向服务端请求空字符串并被判定为“文件失效”。
-        val effectiveFileId = msg.fileId.ifBlank { msg.msgId }
-        if (downloads.containsKey(effectiveFileId)) {
+        val effectiveFileId = msg.fileId
+        if (effectiveFileId.isBlank()) { notify("文件标识缺失"); return }
+        if (!downloads.add(effectiveFileId)) {
             notify("文件正在下载，请勿重复点击")
             return
         }
-        if (msg.fileId.isBlank()) {
-            viewModelScope.launch { store?.repairFileId(client.myId, msg.msgId, effectiveFileId) }
-        }
-        val dir = java.io.File(ctx.filesDir, "file").apply { mkdirs() }
+        val dir = java.io.File(ctx.filesDir, if (msg.kind == MsgKind.IMAGE) "img" else "file").apply { mkdirs() }
         // 展示名来自网络，物理文件名必须去掉路径成分，不能直接信任。
         val safeName = java.io.File(msg.fileName).name.ifBlank { "file" }.take(255)
-        val part = java.io.File(dir, "${effectiveFileId}_$safeName.part")
-        // 协议只从完整块水位续传；进程在一次 write 中途被杀产生的残块不能直接 append。
-        if (part.length() < msg.fileSize && part.length() % Protocol.FILE_CHUNK_SIZE != 0L) {
-            part.delete()
-        }
-        // I1（客户端对称修复）：.part 已经等于 fileSize 说明上次已经收完全部字节，只是没来得及
-        // 落地为最终文件（比如中途被杀）。此时不应再请求下载（会重复追加末块导致 partSize 越界），
-        // 直接把 .part 落地为最终文件即可。
-        if (msg.fileSize > 0 && part.length() >= msg.fileSize) {
-            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                val finalFile = java.io.File(dir, "${effectiveFileId}_$safeName")
-                val ok = runCatching { part.renameTo(finalFile) }.getOrDefault(false)
-                if (ok) {
-                    store?.updateFileLocalPath(client.myId, effectiveFileId, finalFile.absolutePath)
-                    store?.updateStatus(client.myId, msg.msgId, ChatMessage.Status.RECEIVED)
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        val conv = _messages.value[msg.peerId] ?: return@withContext
-                        _messages.value = _messages.value + (msg.peerId to conv.map {
-                            if (it.fileId == msg.fileId) it.copy(localPath = finalFile.absolutePath, status = ChatMessage.Status.RECEIVED) else it })
-                    }
-                } else {
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { notify("文件保存失败") }
-                }
-            }
-            return
-        }
-        val fromChunk = (part.length() / Protocol.FILE_CHUNK_SIZE).toInt()
-        val out = java.io.FileOutputStream(part, /*append=*/true)
-        downloads[effectiveFileId] = Download(
-            msg.peerId, effectiveFileId, safeName, msg.fileSize, out, part,
-        )
+        val finalFile = java.io.File(dir, "${effectiveFileId}_$safeName")
         updateFileStatus(msg.peerId, msg.msgId, ChatMessage.Status.SENDING) // 复用"进行中"
-        viewModelScope.launch { client.fileDownload(effectiveFileId, fromChunk) }
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                mediaClient.download(effectiveFileId, finalFile, msg.sha256) { received, total ->
+                    val percent = if (total > 0) (received * 100 / total).toInt() else 0
+                    viewModelScope.launch { updateFileProgress(msg.peerId, msg.msgId, percent) }
+                }
+            }.onSuccess {
+                downloads.remove(effectiveFileId)
+                updateFileLocalPath(msg.peerId, msg.msgId, finalFile.absolutePath)
+                updateFileStatus(msg.peerId, msg.msgId, ChatMessage.Status.RECEIVED)
+            }.onFailure {
+                downloads.remove(effectiveFileId)
+                updateFileStatus(msg.peerId, msg.msgId, ChatMessage.Status.RECEIVED)
+                notify("下载失败：${it.message ?: it.javaClass.simpleName}")
+            }
+        }
     }
 
     // ---------------- 事件归集 ----------------
@@ -568,17 +568,6 @@ class MainViewModel : ViewModel() {
                     )
                 }
 
-                is ImClient.Event.ImageReceived -> {
-                    val inChat = _screen.value == Screen.Chat && _chatPeer.value?.id == e.fromId
-                    append(
-                        ChatMessage(
-                            e.msgId, e.fromId, fromMe = false, kind = MsgKind.IMAGE,
-                            imageBytes = e.bytes, imgW = e.w, imgH = e.h, ts = e.ts, seq = e.seq,
-                        ),
-                        incrUnread = !inChat,
-                    )
-                }
-
                 is ImClient.Event.ChatSendResult -> {
                     android.util.Log.d("IMSEQ", "收到回执 peer=${e.peerId} msgId=${e.msgId} 服务端分配 seq=${e.seq} result=${e.result}")
                     val status = when(e.result){
@@ -595,6 +584,7 @@ class MainViewModel : ViewModel() {
                         status,
                         e.seq,
                     )
+                    uploads.remove(e.msgId)
                 }
 
                 is ImClient.Event.AddFriendRequestReceived -> {
@@ -663,6 +653,8 @@ class MainViewModel : ViewModel() {
                                 fileId = item.fileId.ifBlank { item.msgId },
                                 fileName = item.fileName,
                                 fileSize = item.fileSize,
+                                contentType = item.contentType,
+                                sha256 = item.sha256,
                                 status = if (fromMe) ChatMessage.Status.DELIVERED else ChatMessage.Status.RECEIVED,
                             ),
                             incrUnread = false,
@@ -710,82 +702,16 @@ class MainViewModel : ViewModel() {
                     expectDisconnect = false
                 }
 
-                // 文件发送方状态机（M7 Task 11）：FileChunk/FileCard 为接收方逻辑，留给 Task 12
-                is ImClient.Event.FileOfferResult -> {
-                    val up = uploads[e.msgId] ?: return@collect
-                    if (e.result != Protocol.FILE_OFFER_OK) {
-                        updateFileStatus(up.peerId, e.msgId, ChatMessage.Status.FAILED)
-                        val msg = if (e.result == Protocol.FILE_OFFER_NOT_FRIEND) "对方不是你的好友，文件未发送" else "文件被拒绝（超限）"
-                        notify(msg); uploads.remove(e.msgId); return@collect
-                    }
-                    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                        runCatching {
-                            java.io.FileInputStream(up.file).use { s ->
-                                var idx = 0
-                                val buf = ByteArray(Protocol.FILE_CHUNK_SIZE)
-                                // 跳过已发送的 e.receivedChunks 块（断点续传）
-                                var skip = e.receivedChunks.toLong() * Protocol.FILE_CHUNK_SIZE
-                                while (skip > 0) { val sk = s.skip(skip); if (sk <= 0) break; skip -= sk }
-                                idx = e.receivedChunks
-                                while (true) {
-                                    val n = s.read(buf); if (n < 0) break
-                                    client.fileChunk(e.fileId, idx, buf.copyOf(n)); idx++
-                                }
-                                client.fileComplete(e.fileId, e.msgId)
-                            }
-                        }.onFailure {
-                            notify("文件发送失败：${it.message ?: it.javaClass.simpleName}")
-                            updateFileStatus(up.peerId, e.msgId, ChatMessage.Status.FAILED)
-                        }
-                    }
-                }
-                is ImClient.Event.FileChunk -> {
-                    val d = downloads[e.fileId] ?: return@collect
-                    val expectedIndex = (d.partFile.length() / Protocol.FILE_CHUNK_SIZE).toInt()
-                    val remaining = d.size - d.partFile.length()
-                    val expectedBytes = minOf(Protocol.FILE_CHUNK_SIZE.toLong(), remaining).toInt()
-                    if (e.chunkIndex != expectedIndex || remaining <= 0 || e.data.size != expectedBytes) {
-                        runCatching { d.out.close() }
-                        downloads.remove(e.fileId)
-                        updateFileStatus(d.peerId, e.fileId, ChatMessage.Status.RECEIVED)
-                        notify("文件分片校验失败，请重试")
-                        return@collect
-                    }
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { d.out.write(e.data); d.out.flush() }
-                    val chunks = (d.partFile.length() / Protocol.FILE_CHUNK_SIZE).toInt()
-                    updateFileProgress(d.peerId, e.fileId, chunks)
-                }
-                is ImClient.Event.FileProgress -> {
-                    val up = uploads[e.fileId]
-                    if (up != null) {
-                        if (e.status == Protocol.FILE_ST_DONE) {
-                            // 文件完成响应携带服务端会话 seq；与文本/图片回执一样校正排序键。
-                            // 否则文件卡片会一直保持 seq=0，被 sortBySeq 永久放在会话末尾。
-                            updateStatus(
-                                up.peerId,
-                                e.fileId,
-                                if (e.delivered) ChatMessage.Status.DELIVERED
-                                else ChatMessage.Status.OFFLINE_STORED,
-                                e.seq,
-                            )
-                            uploads.remove(e.fileId)
-                        } else if (e.status == Protocol.FILE_ST_FAILED) {
-                            // I3: 失败后把卡片从"进行中"恢复为非发送中态，避免永远停在进度条
-                            updateFileStatus(up.peerId, e.fileId, ChatMessage.Status.FAILED)
-                            notify("文件发送失败"); uploads.remove(e.fileId)
-                        } else {
-                            updateFileProgress(up.peerId, e.fileId, e.received)
-                        }
-                    } else {
-                        // 下载进度（接收方）
-                        onDownloadProgress(e)
-                    }
-                }
-                is ImClient.Event.FileCard -> {
+                is ImClient.Event.MediaCard -> {
                     val inChat = _screen.value == Screen.Chat && _chatPeer.value?.id == e.fromId
-                    append(ChatMessage(e.msgId, e.fromId, fromMe = false, kind = MsgKind.FILE,
+                    val media = ChatMessage(e.msgId, e.fromId, fromMe = false,
+                        kind = if (e.isImage) MsgKind.IMAGE else MsgKind.FILE,
                         fileId = e.fileId, fileName = e.name, fileSize = e.size, ts = e.ts, seq = e.seq,
-                        status = ChatMessage.Status.RECEIVED), incrUnread = !inChat)
+                        contentType = e.contentType, sha256 = e.sha256, imgW = e.width, imgH = e.height,
+                        status = ChatMessage.Status.RECEIVED)
+                    append(media, incrUnread = !inChat)
+                    // 图片需要即时展示；普通文件仍由用户点击后下载。
+                    if (e.isImage) downloadFile(media)
                 }
             }
         }
@@ -925,34 +851,13 @@ class MainViewModel : ViewModel() {
             if (it.msgId == msgId) it.copy(transferred = transferred) else it })
     }
 
-    /** 接收方下载进度：DONE 时 .part 落地为最终文件并写回 Room；FAILED 时清理并提示 */
-    private fun onDownloadProgress(e: ImClient.Event.FileProgress) {
-        val d = downloads[e.fileId] ?: return
-        if (e.status == Protocol.FILE_ST_DONE) {
-            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                runCatching { d.out.close() }
-                val ctx = appContext ?: return@launch
-                val finalFile = java.io.File(java.io.File(ctx.filesDir, "file"), "${d.fileId}_${d.name}")
-                val ok = d.partFile.renameTo(finalFile)
-                if (ok) {
-                    store?.updateFileLocalPath(client.myId, d.fileId, finalFile.absolutePath)
-                    store?.updateStatus(client.myId, d.fileId, ChatMessage.Status.RECEIVED)
-                }
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    if (ok) {
-                        val conv = _messages.value[d.peerId] ?: return@withContext
-                        _messages.value = _messages.value + (d.peerId to conv.map {
-                            if (it.fileId == d.fileId) it.copy(localPath = finalFile.absolutePath, status = ChatMessage.Status.RECEIVED) else it })
-                    } else {
-                        notify("文件保存失败")
-                    }
-                    downloads.remove(d.fileId)
-                }
-            }
-        } else if (e.status == Protocol.FILE_ST_FAILED) {
-            runCatching { d.out.close() }; downloads.remove(e.fileId); notify("文件已失效")
-            // I3: 接收方 msgId == fileId；恢复为 RECEIVED（"点击下载"）以支持重试，不留在"进行中"
-            updateFileStatus(d.peerId, d.fileId, ChatMessage.Status.RECEIVED)
+    private fun updateMediaMetadata(peerId: Int, msgId: String, fileId: String, contentType: String, sha256: String) {
+        val conv = _messages.value[peerId] ?: return
+        _messages.value = _messages.value + (peerId to conv.map {
+            if (it.msgId == msgId) it.copy(fileId = fileId, contentType = contentType, sha256 = sha256) else it
+        })
+        viewModelScope.launch {
+            store?.updateMediaMetadata(client.myId, msgId, fileId, contentType, sha256)
         }
     }
 

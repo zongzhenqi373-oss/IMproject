@@ -96,8 +96,11 @@ public:
     // 某会话（userId↔peerId）比 beforeSeq 更早的 limit 条（seq 倒序）
     std::vector<StoredMessage> roamMessages(int userId, int peerId, std::int64_t beforeSeq, int limit);
 
-    // 按 msg_id 取单条消息（下载寻址：file_id==msg_id）；不存在返回 false
+    // 按 msg_id 取单条消息；不存在返回 false
     bool getMessageByMsgId(const std::string& msgId, StoredMessage& out);
+
+    //按文件id取单条富媒体消息；不存在返回 false
+    bool getMessageByFileId(const std::string& fileId, StoredMessage& out);
 
     // ---------------- 认证 ----------------
     struct AuthSessionRecord {

@@ -3,12 +3,16 @@
 #include "TcpTransport.h"
 #include "im.pb.h"
 #include "sha256.h"
+#include "httplib.h"
 
 #include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <ctime>
+#include <filesystem>
+#include <fstream>
 #include <random>
+#include <vector>
 
 namespace im {
 
@@ -43,9 +47,26 @@ std::string makeMsgId()
                   static_cast<unsigned long long>(rand64));
     return buf;
 }
+
+// 从 HttpFileServer 的上传响应体（形如 {"file_id":"...","sha256":"...","size":N,
+// "content_type":"..."}）里抠一个字符串字段。响应格式完全由我们自己的服务端生成、
+// 值都是 hex/mime 这类不含引号转义的简单字符串，不需要引入完整 JSON 库。
+std::string extractJsonStringField(const std::string& json, const std::string& key)
+{
+    const std::string needle = "\"" + key + "\":\"";
+    auto pos = json.find(needle);
+    if (pos == std::string::npos) return "";
+    pos += needle.size();
+    auto end = json.find('"', pos);
+    if (end == std::string::npos) return "";
+    return json.substr(pos, end - pos);
+}
 } // namespace
 
 ClientCore::ClientCore(ClientConfig config)
+    : m_tlsServerName(config.tlsServerName)
+    , m_caFile(config.caFile)
+    , m_httpPort(config.httpPort)
 {
     //开发阶段如果证书SAN是 IP:127.0.0.1，serverName可以暂时传 "127.0.0.1"。
     //不能使用 verify_none 或永远返回true的验证回调。
@@ -80,6 +101,8 @@ void ClientCore::setStorage(IStorage* storage) { m_storage.store(storage); }
 bool ClientCore::connectToServer(const std::string& ip, std::uint16_t port)
 {
     if (!m_transport->connect(ip, port)) return false;
+    m_host = ip;
+    if (m_httpPort == 0) m_httpPort = static_cast<std::uint16_t>(port + 1);
     m_lastRecvMs.store(steadyNowMs());
     startHeartbeat();
     return true;
@@ -112,9 +135,6 @@ void ClientCore::initFunArr()
     m_dealFunArr[DEF_PROT_KICKED_OFFLINE - DEF_BASE] = &ClientCore::onKickedOfflinePkt;
     m_dealFunArr[DEF_PROT_ROAM_CONV_RS   - DEF_BASE] = &ClientCore::onRoamConvRs;
     m_dealFunArr[DEF_PROT_ROAM_MSG_RS    - DEF_BASE] = &ClientCore::onRoamMsgRs;
-    m_dealFunArr[DEF_PROT_FILE_OFFER_RS    - DEF_BASE] = &ClientCore::onFileOfferRs;
-    m_dealFunArr[DEF_PROT_FILE_CHUNK_RQ    - DEF_BASE] = &ClientCore::onFileChunkRq;
-    m_dealFunArr[DEF_PROT_FILE_PROGRESS_RS - DEF_BASE] = &ClientCore::onFileProgressRs;
 }
 
 void ClientCore::dispatchPacket(const char* data, std::size_t len)
@@ -160,8 +180,7 @@ void ClientCore::sendLogin(const std::string& tel, const std::string& pass)
     rq.set_tel(utf8Truncate(tel, USER_TEL_LEN - 1));
     // 对齐 QQNT：传输的是密码哈希，而非明文
     rq.set_pass(sha256Hex(pass));
-    // C++ 客户端尚未接平台设备信息，先使用稳定的客户端实例类别标识参与 Token 设备绑定。
-    rq.set_device_id("client-core-default");
+    rq.set_device_id(m_deviceId);
     rq.set_device_name("C++ ClientCore");
     rq.set_client_version("client-core-0.5.0");
     sendPacket(DEF_PROT_LOGIN_RQ, rq.SerializeAsString());
@@ -186,21 +205,6 @@ void ClientCore::sendChatMessage(int friId, const std::string& msgUtf8)
                                 static_cast<std::int64_t>(std::time(nullptr)));
         }
     }
-}
-
-void ClientCore::sendImageMessage(int friId, const std::string& imageBytes, int w, int h)
-{
-    if (imageBytes.empty()) return;
-
-    im::proto::ChatInfoRq rq;
-    rq.set_myid(m_myId);
-    rq.set_friid(friId);
-    rq.set_type(im::proto::IMAGE);
-    rq.set_image_data(imageBytes);
-    rq.set_image_width(w);
-    rq.set_image_height(h);
-    rq.set_msg_id(makeMsgId());
-    sendPacket(DEF_PROT_CHAT_INFO_RQ, rq.SerializeAsString());
 }
 
 void ClientCore::sendAddFriendRequest(const std::string& friNickUtf8)
@@ -247,42 +251,131 @@ void ClientCore::sendRoamMsgRq(int peerId, std::int64_t beforeSeq, int limit)
     sendPacket(DEF_PROT_ROAM_MSG_RQ, rq.SerializeAsString());
 }
 
-void ClientCore::sendFileOffer(const std::string& msgId, int receiverId, const std::string& name,
-                               std::int64_t size, int totalChunks, const std::string& sha256)
+std::string ClientCore::uploadMedia(const std::string& localPath, int receiverId, bool isImage,
+                                    const MediaProgress& onProgress)
 {
-    im::proto::FileOfferRq rq;
-    rq.set_msg_id(msgId);
-    rq.set_receiver_id(receiverId);
-    rq.set_file_name(name);
+    if (m_tlsServerName.empty() || m_httpPort == 0 || m_accessToken.empty()) return "";
+
+    std::ifstream ifs(localPath, std::ios::binary | std::ios::ate);
+    if (!ifs) return "";
+    const auto sizeSigned = static_cast<std::int64_t>(ifs.tellg());
+    if (sizeSigned <= 0 || sizeSigned > proto::FILE_MAX_SIZE) return "";
+    const auto size = static_cast<std::size_t>(sizeSigned);
+    ifs.seekg(0, std::ios::beg);
+
+    httplib::SSLClient cli(m_tlsServerName, m_httpPort);
+    if (!m_caFile.empty()) cli.set_ca_cert_path(m_caFile);
+    if (!m_host.empty() && m_host != m_tlsServerName) {
+        // SNI/证书校验走 m_tlsServerName，实际拨号走 connectToServer 时传入的地址，
+        // 跟 TcpTransport 的 TLS 校验方式保持一致
+        cli.set_hostname_addr_map({{m_tlsServerName, m_host}});
+    }
+    cli.set_connection_timeout(10);
+    cli.set_read_timeout(120);
+    cli.set_write_timeout(120);
+
+    const std::string fileName = std::filesystem::path(localPath).filename().string();
+    const httplib::Headers headers = {
+        {"Authorization", "Bearer " + m_accessToken},
+        {"X-Device-Id", m_deviceId},
+        {"X-File-Name", fileName},
+        {"X-Receiver-Id", std::to_string(receiverId)},
+    };
+    const std::string contentType = isImage ? "image/jpeg" : "application/octet-stream";
+
+    // 流式上传：边读本地文件边写 sink，不整体载入内存
+    auto provider = [&ifs](std::size_t /*offset*/, std::size_t length, httplib::DataSink& sink) -> bool {
+        std::vector<char> buf(64 * 1024);
+        std::size_t remaining = length;
+        while (remaining > 0 && ifs) {
+            const std::size_t chunk = std::min(remaining, buf.size());
+            ifs.read(buf.data(), static_cast<std::streamsize>(chunk));
+            const auto got = ifs.gcount();
+            if (got <= 0) break;
+            if (!sink.write(buf.data(), static_cast<std::size_t>(got))) return false;
+            remaining -= static_cast<std::size_t>(got);
+        }
+        return true;
+    };
+
+    httplib::UploadProgress progressCb = nullptr;
+    if (onProgress) {
+        progressCb = [&onProgress](std::size_t current, std::size_t total) -> bool {
+            onProgress(static_cast<std::int64_t>(current), static_cast<std::int64_t>(total));
+            return true;
+        };
+    }
+
+    auto res = cli.Post("/api/v1/upload", headers, size, provider, contentType, progressCb);
+    if (!res || res->status != 200) return "";
+    return extractJsonStringField(res->body, "file_id");
+}
+
+bool ClientCore::downloadMedia(const std::string& fileId, const std::string& destPath,
+                               const MediaProgress& onProgress)
+{
+    if (m_tlsServerName.empty() || m_httpPort == 0 || m_accessToken.empty()) return false;
+
+    httplib::SSLClient cli(m_tlsServerName, m_httpPort);
+    if (!m_caFile.empty()) cli.set_ca_cert_path(m_caFile);
+    if (!m_host.empty() && m_host != m_tlsServerName) {
+        cli.set_hostname_addr_map({{m_tlsServerName, m_host}});
+    }
+    cli.set_connection_timeout(10);
+    cli.set_read_timeout(120);
+    cli.set_write_timeout(120);
+
+    std::ofstream ofs(destPath, std::ios::binary | std::ios::trunc);
+    if (!ofs) return false;
+
+    const httplib::Headers headers = {
+        {"Authorization", "Bearer " + m_accessToken},
+        {"X-Device-Id", m_deviceId},
+    };
+
+    httplib::DownloadProgress progressCb = nullptr;
+    if (onProgress) {
+        progressCb = [&onProgress](std::size_t current, std::size_t total) -> bool {
+            onProgress(static_cast<std::int64_t>(current), static_cast<std::int64_t>(total));
+            return true;
+        };
+    }
+
+    // 流式下载：边收边写盘，不整体载入内存
+    auto res = cli.Get(
+        "/api/v1/download/" + fileId, headers,
+        [&ofs](const char* data, std::size_t len) -> bool {
+            ofs.write(data, static_cast<std::streamsize>(len));
+            return static_cast<bool>(ofs);
+        },
+        progressCb);
+
+    ofs.close();
+    if (!res || (res->status != 200 && res->status != 206)) {
+        std::error_code ec;
+        std::filesystem::remove(destPath, ec);
+        return false;
+    }
+    return true;
+}
+
+void ClientCore::sendFileMessage(int friId, const std::string& fileId, const std::string& fileName,
+                                 std::int64_t size, const std::string& contentType,
+                                 const std::string& sha256, bool isImage, int w, int h)
+{
+    im::proto::ChatInfoRq rq;
+    rq.set_myid(m_myId);
+    rq.set_friid(friId);
+    rq.set_type(isImage ? im::proto::IMAGE : im::proto::FILE);
+    rq.set_file_id(fileId);
+    rq.set_file_name(fileName);
     rq.set_file_size(size);
-    rq.set_total_chunks(totalChunks);
+    rq.set_content_type(contentType);
     rq.set_sha256(sha256);
-    sendPacket(DEF_PROT_FILE_OFFER_RQ, rq.SerializeAsString());
-}
-
-void ClientCore::sendFileChunk(const std::string& fileId, int index, const std::string& data)
-{
-    im::proto::FileChunkRq rq;
-    rq.set_file_id(fileId);
-    rq.set_chunk_index(index);
-    rq.set_data(data);
-    sendPacket(DEF_PROT_FILE_CHUNK_RQ, rq.SerializeAsString());
-}
-
-void ClientCore::sendFileComplete(const std::string& fileId, const std::string& msgId)
-{
-    im::proto::FileCompleteRq rq;
-    rq.set_file_id(fileId);
-    rq.set_msg_id(msgId);
-    sendPacket(DEF_PROT_FILE_COMPLETE_RQ, rq.SerializeAsString());
-}
-
-void ClientCore::sendFileDownload(const std::string& fileId, int fromChunk)
-{
-    im::proto::FileDownloadRq rq;
-    rq.set_file_id(fileId);
-    rq.set_from_chunk(fromChunk);
-    sendPacket(DEF_PROT_FILE_DOWNLOAD_RQ, rq.SerializeAsString());
+    rq.set_image_width(w);
+    rq.set_image_height(h);
+    rq.set_msg_id(makeMsgId());
+    sendPacket(DEF_PROT_CHAT_INFO_RQ, rq.SerializeAsString());
 }
 
 // ---------------- 心跳保活 ----------------
@@ -356,7 +449,10 @@ void ClientCore::onLoginRs(const char* data, std::size_t len)
 {
     im::proto::LoginRs rs;
     if (!parsePayload(data, len, rs)) return;
-    if (rs.result() == LOGIN_SUCCESS) m_myId = rs.userid();
+    if (rs.result() == LOGIN_SUCCESS) {
+        m_myId = rs.userid();
+        m_accessToken = rs.access_token(); // HTTP 文件服务鉴权用，跟 socket 侧同一枚 token
+    }
     if (auto* ev = m_events.load()) ev->onLoginResult(rs.result(), rs.userid());
 }
 
@@ -395,17 +491,12 @@ void ClientCore::onChatInfoRq(const char* data, std::size_t len)
     im::proto::ChatInfoRq rq;
     if (!parsePayload(data, len, rq)) return;
 
-    // 文件卡片单独回调（rq.myid 是发送方）
-    if (rq.type() == im::proto::FILE) {
-        if (auto* ev = m_events.load())
-            ev->onFileCard(rq.myid(), rq.file_id(), rq.file_name(), rq.file_size(), rq.msg_id());
-        return;
-    }
-
-    // 图片消息单独回调（rq.myid 是发送方）
-    if (rq.type() == im::proto::IMAGE) {
+    // 文件/图片卡片统一回调（rq.myid 是发送方）：字节不再随包下发，UI 按需 downloadMedia()
+    if (rq.type() == im::proto::FILE || rq.type() == im::proto::IMAGE) {
         if (auto* ev = m_events.load()) {
-            ev->onImageMessage(rq.myid(), rq.image_data(), rq.image_width(), rq.image_height(), rq.msg_id());
+            ev->onFileCard(rq.myid(), rq.file_id(), rq.file_name(), rq.file_size(), rq.msg_id(),
+                           rq.content_type(), rq.sha256(), rq.type() == im::proto::IMAGE,
+                           rq.image_width(), rq.image_height());
         }
         return;
     }
@@ -455,9 +546,12 @@ static RoamMessage toRoamMessage(const im::proto::ChatInfoRq& c)
     RoamMessage rm;
     rm.fromId = c.myid();
     rm.toId = c.friid();
-    rm.type = c.type() == im::proto::IMAGE ? 1 : 0;
+    rm.type = c.type() == im::proto::IMAGE ? 1 : (c.type() == im::proto::FILE ? 2 : 0);
     rm.text = c.msg();
-    rm.imageBytes = c.image_data();
+    rm.fileId = c.file_id();
+    rm.fileName = c.file_name();
+    rm.fileSize = c.file_size();
+    rm.contentType = c.content_type();
     rm.imgW = c.image_width();
     rm.imgH = c.image_height();
     rm.msgId = c.msg_id();
@@ -486,33 +580,6 @@ void ClientCore::onRoamMsgRs(const char* data, std::size_t len)
     if (auto* ev = m_events.load()) {
         ev->onRoamMessages(rs.peer_id(), msgs, rs.has_more(), rs.min_seq());
     }
-}
-
-void ClientCore::onFileOfferRs(const char* data, std::size_t len)
-{
-    im::proto::FileOfferRs rs;
-    if (!parsePayload(data, len, rs)) return;
-    FileOfferInfo info;
-    info.msgId = rs.msg_id();
-    info.fileId = rs.file_id();
-    info.receivedChunks = rs.received_chunks();
-    info.result = rs.result();
-    if (auto* ev = m_events.load()) ev->onFileOfferResult(info);
-}
-
-void ClientCore::onFileChunkRq(const char* data, std::size_t len)
-{
-    im::proto::FileChunkRq rq;
-    if (!parsePayload(data, len, rq)) return;
-    if (auto* ev = m_events.load()) ev->onFileChunk(rq.file_id(), rq.chunk_index(), rq.data());
-}
-
-void ClientCore::onFileProgressRs(const char* data, std::size_t len)
-{
-    im::proto::FileProgressRs rs;
-    if (!parsePayload(data, len, rs)) return;
-    if (auto* ev = m_events.load())
-        ev->onFileProgress(rs.file_id(), rs.received_chunks(), rs.total_chunks(), rs.status());
 }
 
 } // namespace im

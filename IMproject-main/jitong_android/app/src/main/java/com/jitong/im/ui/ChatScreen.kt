@@ -47,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -304,8 +305,7 @@ private fun FileBubble(msg: ChatMessage, onDownload: () -> Unit, onOpen: () -> U
     val downloaded = msg.localPath != null && !msg.localPath!!.endsWith(".part")
     val downloading = msg.status == ChatMessage.Status.SENDING
     val failed = msg.fromMe && msg.status == ChatMessage.Status.FAILED
-    val total = ((msg.fileSize + FILE_CHUNK - 1) / FILE_CHUNK).toInt().coerceAtLeast(1)
-    val progress = (msg.transferred * 100 / total).coerceIn(0, 100)
+    val progress = msg.transferred.coerceIn(0, 100)
     val actionText = when {
         downloading -> "传输中 $progress%"
         failed -> "点击重试"
@@ -366,7 +366,6 @@ private fun FileBubble(msg: ChatMessage, onDownload: () -> Unit, onOpen: () -> U
     }
 }
 
-private const val FILE_CHUNK = 256 * 1024
 private fun humanSize(b: Long): String = when {
     b >= 1 shl 20 -> "%.1f MB".format(b / 1048576.0)
     b >= 1 shl 10 -> "%.1f KB".format(b / 1024.0)
@@ -394,6 +393,18 @@ private fun openFile(context: android.content.Context, path: String, name: Strin
 
 @Composable
 private fun ImageBubble(msg: ChatMessage) {
+    if (!msg.localPath.isNullOrBlank()) {
+        val ratio = if (msg.imgW > 0 && msg.imgH > 0) msg.imgW.toFloat() / msg.imgH else 1f
+        AsyncImage(
+            model = java.io.File(msg.localPath),
+            contentDescription = "图片消息",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.widthIn(max = 220.dp)
+                .aspectRatio(ratio.coerceIn(0.4f, 2.5f))
+                .clip(RoundedCornerShape(8.dp)),
+        )
+        return
+    }
     val bitmap = remember(msg.msgId) {
         msg.imageBytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
     }
