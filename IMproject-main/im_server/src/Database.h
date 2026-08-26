@@ -49,6 +49,8 @@ struct StoredMessage {
     std::int64_t seq = 0;   // 会话级单调递增序列号（服务端分配，接收方据此排序）
     std::string fileId;          // type=2 文件消息：服务端文件标识（=发送方 msg_id）
     std::int64_t fileSize = 0;   // type=2：文件字节数
+    std::string contentType;
+    std::string sha256;
 };
 
 class Database {

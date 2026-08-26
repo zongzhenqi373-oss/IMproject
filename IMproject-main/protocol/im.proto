@@ -104,15 +104,19 @@ message ChatInfoRq {
   int32 friid = 2;
   string msg = 3;           // TEXT 时使用，UTF-8，软上限 proto::CHAT_MSG_LEN
   MsgType type = 4;         // 消息类型
-  bytes image_data = 5;     // IMAGE 时使用（压缩后字节，内联通道 ≤500KB）
+  reserved 5;                // 曾用于内联 image_data 字节（≤500KB），已废弃：
+  reserved "image_data";     // 图片/文件统一走 HTTP 文件服务上传，字段号不再回收复用
   int32 image_width = 6;
   int32 image_height = 7;
   string msg_id = 8;        // 客户端生成 UUID，漫游/去重/回执关联用
   int64 ts = 9;             // 消息发送时间（秒，服务端权威时钟）。在线转发/离线补发均带回，接收方据此排序，避免用"收到时刻"导致时序错乱
   int64 seq = 10;           // 会话级单调递增序列号（服务端按 conversation 分配）。接收方按 seq 排序，保证 C2C 严格顺序、可做空洞检测
-  string file_name = 11;   // type=FILE 时：文件名
-  int64  file_size = 12;   // type=FILE 时：字节数
-  string file_id = 13;     // type=FILE 时：服务端文件标识（=发送方 msg_id）
+  string file_name = 11;   // type=FILE/IMAGE 时：文件名
+  int64  file_size = 12;   // type=FILE/IMAGE 时：字节数
+  string file_id = 13;     // type=FILE/IMAGE 时：HTTP 文件服务的下载标识
+                            // （下载地址由客户端自行拼接 /api/v1/download/{file_id}，不落地存 URL）
+  string content_type = 14; // MIME 类型，服务端在 HTTP 上传时嗅探/记录
+  string sha256 = 15;       // 整文件哈希（小写 hex），服务端在 HTTP 上传时计算
 }
 
 // S→C：发送结果回执（myid=接收方朋友, friid=自己）
@@ -145,50 +149,12 @@ message FriendOffline {
   int32 offlineid = 1;
 }
 
-// ---------------- 文件传输（M7） ----------------
-// 独立分片协议：文件可 ≥10MB，内联会堵死信令通道。分块 ≤256KB，顺序水位线断点续传，
-// 消息体卡片复用 ChatInfoRq(type=FILE)。file_id == msg_id（客户端 UUID）。
-
-message FileOfferRq {   // 1017 C→S：发起/续传协商
-  string msg_id = 1;    // 客户端 UUID，全程幂等 / 重组 key / = file_id
-  int32  receiver_id = 2;
-  string file_name = 3; // UTF-8
-  int64  file_size = 4; // 字节
-  int32  total_chunks = 5;
-  string sha256 = 6;    // 整文件完整性校验（小写 hex）
-}
-
-message FileOfferRs {   // 1018 S→C
-  string msg_id = 1;
-  string file_id = 2;          // = msg_id
-  int32  received_chunks = 3;  // 水位线 N（续传起点）
-  int32  result = 4;           // proto::FILE_OFFER_OK / FILE_OFFER_TOO_LARGE
-}
-
-message FileChunkRq {   // 1019 C→S（上传）/ S→C（下载）复用
-  string file_id = 1;
-  int32  chunk_index = 2;
-  bytes  data = 3;             // ≤256KB
-}
-
-message FileCompleteRq { // 1020 C→S：请求校验+落盘+建消息
-  string file_id = 1;
-  string msg_id = 2;
-}
-
-message FileProgressRs { // 1021 S→C：上传/下载进度共用
-  string file_id = 1;
-  int32  received_chunks = 2;
-  int32  total_chunks = 3;
-  int32  status = 4;          // proto::FILE_ST_*
-  int64  seq = 5;             // 上传 DONE 时返回服务端会话序号；其他进度为 0
-  bool   delivered = 6;       // 上传 DONE 时：接收方在线且已转发；false 表示离线转存
-}
-
-message FileDownloadRq { // 1022 C→S：接收方发起/续传下载
-  string file_id = 1;
-  int32  from_chunk = 2;      // 续传起点 = 本地已存块数
-}
+// ---------------- 文件/图片传输（M7 → HTTP 化） ----------------
+// 分片协议（FileOfferRq/FileChunkRq/FileCompleteRq/FileProgressRs/FileDownloadRq，
+// 原协议号 1017-1022）已废弃、整体迁移到独立的 HTTPS 文件服务（im_server/src/HttpFileServer）：
+// 客户端先 POST /api/v1/upload 拿到 file_id，再发一条 ChatInfoRq(type=IMAGE/FILE, file_id=...)
+// 作为"已就绪"通知（复用现有的在线转发/离线补发/漫游链路），下载走 GET /api/v1/download/{file_id}
+// （原生支持 Range 续传）。协议号 1017-1022 不再回收复用，见 client_core/include/client_core/Protocol.h。
 
 // ---------------- 消息漫游（M6） ----------------
 // 换设备/重装后本地库空，登录后从服务端拉回历史。独立下行通道（QoS 隔离、避免队头阻塞），
@@ -199,7 +165,8 @@ message RoamConvRq {
   int32 myid = 1;
 }
 
-// S→C：会话列表预览。每条复用 ChatInfoRq；图片消息只填 type，不带 image_data（预览只需"[图片]"文字）
+// S→C：会话列表预览。每条复用 ChatInfoRq；图片/文件消息只带 file_id/file_name 等元数据，
+// 客户端按需向 HTTP 文件服务发起下载，不在协议包里带媒体字节。
 message RoamConvRs {
   repeated ChatInfoRq convs = 1;
 }
@@ -212,7 +179,7 @@ message RoamMsgRq {
   int32 limit = 4;      // 本批数量 N
 }
 
-// S→C：会话历史分页。图片消息读盘回传完整字节（复用离线补发逻辑）。
+// S→C：会话历史分页。图片/文件消息同样只带元数据，媒体字节按需走 HTTP 文件服务下载。
 message RoamMsgRs {
   int32 peer_id = 1;
   repeated ChatInfoRq msgs = 2; // 服务端 seq 倒序返回；客户端落地后按 seq 升序

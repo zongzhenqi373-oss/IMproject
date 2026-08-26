@@ -6,8 +6,10 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
 
 #include "httplib.h"
 
@@ -56,7 +58,8 @@ private:
     std::thread m_listenThread;
     std::thread m_gcThread;
     std::atomic<bool> m_running{false};
-
+    std::mutex m_uploadMtx;
+    std::unordered_map<std::string, UploadRecord> m_uploads;
 };
 
 } // namespace imsrv

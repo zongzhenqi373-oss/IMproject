@@ -144,8 +144,8 @@ void HttpFileServer::handleUpload(const httplib::Request& req, httplib::Response
         std::to_string(userId) + "|" + std::to_string(receiverId) + "|" + safeName + "|" +
         std::to_string(nowSec()) + "|" + std::to_string(counter.fetch_add(1)));
 
-    const std::string declaredContentType = req.get_header_value("Content-Type");
-    const bool isImage = declaredContentType.rfind("image/", 0) == 0;
+    const std::string contentType = req.get_header_value("Content-Type");
+    const bool isImage = contentType.rfind("image/", 0) == 0;
     const std::string tmpDir = m_server.uploadDir() + (isImage ? "/img/tmp" : "/file/tmp");
     std::error_code dirEc;
     std::filesystem::create_directories(tmpDir, dirEc);
@@ -188,26 +188,20 @@ void HttpFileServer::handleUpload(const httplib::Request& req, httplib::Response
         sha.push_back(hex[b & 0xF]);
     }
 
-    std::string contentType = declaredContentType.empty() ? "application/octet-stream" : declaredContentType;
     std::string finalPath;
     if (isImage) {
+        // 内容寻址去重：跟 Dispatcher::saveImage 用的是同一套命名规则
         const std::string ext = im::imageExtForBytes(headBytes);
-        // MIME 由魔数决定，不能信任客户端自报；未知内容拒绝伪装成图片。
-        if (ext == ".bin") {
-            std::filesystem::remove(tmpPath, rmEc);
-            res.status = 415;
-            return;
-        }
-        contentType = ext == ".png" ? "image/png" :
-                      ext == ".gif" ? "image/gif" :
-                      ext == ".webp" ? "image/webp" : "image/jpeg";
-        // 每次上传独立物理文件。当前没有引用计数，按 sha 去重会被孤儿 GC 误删共享文件。
-        finalPath = m_server.uploadDir() + "/img/" + fileId + ext;
-        std::filesystem::rename(tmpPath, finalPath, rmEc);
-        if (rmEc) {
-            rmEc.clear();
-            std::filesystem::copy_file(tmpPath, finalPath, std::filesystem::copy_options::overwrite_existing, rmEc);
-            if (!rmEc) std::filesystem::remove(tmpPath, rmEc);
+        finalPath = m_server.uploadDir() + "/img/" + sha + ext;
+        std::error_code existsEc;
+        if (std::filesystem::exists(finalPath, existsEc)) {
+            std::filesystem::remove(tmpPath, rmEc); // 已有相同内容，丢弃这次收到的临时文件
+        } else {
+            std::filesystem::rename(tmpPath, finalPath, rmEc);
+            if (rmEc) {
+                std::filesystem::copy_file(tmpPath, finalPath, std::filesystem::copy_options::overwrite_existing, rmEc);
+                std::filesystem::remove(tmpPath, rmEc);
+            }
         }
     } else {
         finalPath = m_server.uploadDir() + "/file/" + fileId + "_" + safeName;
@@ -218,21 +212,9 @@ void HttpFileServer::handleUpload(const httplib::Request& req, httplib::Response
         }
     }
 
-    if (rmEc || !std::filesystem::exists(finalPath)) {
-        std::filesystem::remove(tmpPath, rmEc);
-        res.status = 500;
-        return;
-    }
-
-    const UploadRecord upload{userId, receiverId, finalPath, sha, received, contentType, nowSec()};
-    Database::PendingUploadRecord dbUpload{
-        fileId, upload.uploaderId, upload.receiverId, upload.mediaPath, upload.sha256,
-        upload.size, upload.contentType, upload.uploadedAt,
-    };
-    if (!m_server.db().savePendingUpload(dbUpload)) {
-        std::filesystem::remove(finalPath, rmEc);
-        res.status = 500;
-        return;
+    {
+        std::lock_guard<std::mutex> lg(m_uploadMtx);
+        m_uploads[fileId] = UploadRecord{userId, receiverId, finalPath, sha, received, contentType, nowSec()};
     }
 
     log("[http] 上传完成 uid=", userId, " -> ", receiverId, " file=", safeName, " size=", received, " file_id=", fileId);
@@ -289,16 +271,17 @@ void HttpFileServer::handleDownload(const httplib::Request& req, httplib::Respon
 
 bool HttpFileServer::findUploadRecord(const std::string& fileId, UploadRecord& out)
 {
-    Database::PendingUploadRecord r;
-    if (!m_server.db().findPendingUpload(fileId, r)) return false;
-    out = UploadRecord{r.uploaderId, r.receiverId, r.mediaPath, r.sha256,
-                       r.size, r.contentType, r.uploadedAt};
+    std::lock_guard<std::mutex> lg(m_uploadMtx);
+    auto it = m_uploads.find(fileId);
+    if (it == m_uploads.end()) return false;
+    out = it->second;
     return true;
 }
 
 void HttpFileServer::eraseUploadRecord(const std::string& fileId)
 {
-    m_server.db().deletePendingUpload(fileId);
+    std::lock_guard<std::mutex> lg(m_uploadMtx);
+    m_uploads.erase(fileId);
 }
 
 void HttpFileServer::gcLoop()
@@ -313,7 +296,18 @@ void HttpFileServer::gcLoop()
         if (!m_running.load()) break;
 
         const std::int64_t now = nowSec();
-        const auto expiredPaths = m_server.db().deleteExpiredPendingUploads(now - kTtlSeconds);
+        std::vector<std::string> expiredPaths;
+        {
+            std::lock_guard<std::mutex> lg(m_uploadMtx);
+            for (auto it = m_uploads.begin(); it != m_uploads.end();) {
+                if (now - it->second.uploadedAt > kTtlSeconds) {
+                    expiredPaths.push_back(it->second.mediaPath);
+                    it = m_uploads.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
         std::error_code ec;
         for (const auto& p : expiredPaths) {
             std::filesystem::remove(p, ec);
