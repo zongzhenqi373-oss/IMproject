@@ -119,9 +119,11 @@ bool Server::start()
     }
     m_db.seedIfEmpty();
 
-    m_dispatcher = std::make_unique<Dispatcher>(*this);
-
     m_httpFileServer = std::make_unique<HttpFileServer>(*this, m_httpPort, m_certPath, m_keyPath);
+    // 文件服务先完成构造，消息 Handler 才能以明确依赖注入的方式引用它；
+    // Dispatcher 自身只做协议路由，不再拿完整 Server& 作为服务定位器。
+    m_dispatcher = std::make_unique<Dispatcher>(
+        m_db, m_presence, m_tokenService, *m_httpFileServer);
     if (!m_httpFileServer->start()) {
         log("[server] HTTP 文件服务启动失败 port=", m_httpPort);
         return false;
