@@ -20,7 +20,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 
-enum class Screen { Login, FriendList, Chat }
+enum class Screen { Login, FriendList, Chat, ChatSearch }
 
 data class Friend(
     val id: Int,
@@ -106,6 +106,10 @@ class MainViewModel : ViewModel() {
     private val _conversationSearchResults = MutableStateFlow<List<MessageEntity>>(emptyList())
     val conversationSearchResults: StateFlow<List<MessageEntity>> = _conversationSearchResults
     private var conversationSearchJob: kotlinx.coroutines.Job? = null
+
+    /** 从搜索结果返回聊天页后需要定位的消息；ChatScreen 消费完成后清空。 */
+    private val _chatJumpTarget = MutableStateFlow<String?>(null)
+    val chatJumpTarget: StateFlow<String?> = _chatJumpTarget
 
     private val _toast = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val toast: SharedFlow<String> = _toast
@@ -195,6 +199,8 @@ class MainViewModel : ViewModel() {
     // ---------------- 导航 ----------------
 
     fun openChat(friend: Friend) {
+        clearConversationSearch()
+        _chatJumpTarget.value = null
         _chatPeer.value = friend
         _screen.value = Screen.Chat
         // 进入会话清零未读（库 + 内存）
@@ -248,7 +254,30 @@ class MainViewModel : ViewModel() {
     }
 
     fun backToFriends() {
+        clearConversationSearch()
+        _chatJumpTarget.value = null
         _screen.value = Screen.FriendList
+    }
+
+    fun openChatSearch() {
+        if (_chatPeer.value == null) return
+        clearConversationSearch()
+        _screen.value = Screen.ChatSearch
+    }
+
+    fun backToChat() {
+        clearConversationSearch()
+        _screen.value = Screen.Chat
+    }
+
+    fun returnToChatAt(msgId: String) {
+        clearConversationSearch()
+        _chatJumpTarget.value = msgId
+        _screen.value = Screen.Chat
+    }
+
+    fun consumeChatJumpTarget() {
+        _chatJumpTarget.value = null
     }
 
     fun logout() {
@@ -588,7 +617,8 @@ class MainViewModel : ViewModel() {
                 }
 
                 is ImClient.Event.ChatReceived -> {
-                    val inChat = _screen.value == Screen.Chat && _chatPeer.value?.id == e.fromId
+                    val inChat = (_screen.value == Screen.Chat || _screen.value == Screen.ChatSearch) &&
+                        _chatPeer.value?.id == e.fromId
                     android.util.Log.d("IMDBG", "ChatReceived from=${e.fromId} msgId=${e.msgId} ts=${e.ts} seq=${e.seq} text=${e.text}")
                     append(
                         ChatMessage(e.msgId, e.fromId, fromMe = false, text = e.text, ts = e.ts, seq = e.seq),
@@ -731,7 +761,8 @@ class MainViewModel : ViewModel() {
                 }
 
                 is ImClient.Event.MediaCard -> {
-                    val inChat = _screen.value == Screen.Chat && _chatPeer.value?.id == e.fromId
+                    val inChat = (_screen.value == Screen.Chat || _screen.value == Screen.ChatSearch) &&
+                        _chatPeer.value?.id == e.fromId
                     val media = ChatMessage(e.msgId, e.fromId, fromMe = false,
                         kind = if (e.isImage) MsgKind.IMAGE else MsgKind.FILE,
                         fileId = e.fileId, fileName = e.name, fileSize = e.size, ts = e.ts, seq = e.seq,
@@ -973,6 +1004,7 @@ class MainViewModel : ViewModel() {
         _conversations.value = emptyMap()
         _searchResults.value = emptyList()
         clearConversationSearch()
+        _chatJumpTarget.value = null
         _chatPeer.value = null
         _myNick.value = ""
         _myFeeling.value = ""

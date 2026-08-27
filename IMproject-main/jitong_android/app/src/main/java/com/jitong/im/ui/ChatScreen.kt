@@ -27,6 +27,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -62,16 +64,13 @@ import com.jitong.im.ui.theme.PaleBlue
 import com.jitong.im.ui.theme.SecondaryText
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(vm: MainViewModel) {
     val peer by vm.chatPeer.collectAsStateWithLifecycle()
     val allMessages by vm.messages.collectAsStateWithLifecycle()
-    val searchResults by vm.conversationSearchResults.collectAsStateWithLifecycle()
+    val jumpTarget by vm.chatJumpTarget.collectAsStateWithLifecycle()
     val p = peer ?: return
     val conv = allMessages[p.id].orEmpty()
 
@@ -90,22 +89,20 @@ fun ChatScreen(vm: MainViewModel) {
 
     var input by rememberSaveable { mutableStateOf("") }
     var showPanel by remember { mutableStateOf(false) }
-    var searchMode by rememberSaveable(p.id) { mutableStateOf(false) }
-    var searchQuery by rememberSaveable(p.id) { mutableStateOf("") }
-    var jumpToMsgId by remember { mutableStateOf<String?>(null) }
+    var showTopMenu by remember { mutableStateOf(false) }
     val keyboard = LocalSoftwareKeyboardController.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(jumpToMsgId, conv.size) {
-        val msgId = jumpToMsgId ?: return@LaunchedEffect
+    LaunchedEffect(jumpTarget, conv.size) {
+        val msgId = jumpTarget ?: return@LaunchedEffect
         val index = conv.indexOfFirst { it.msgId == msgId }
         if (index >= 0) {
             listState.animateScrollToItem(index)
         } else {
             vm.notify("该消息尚未加载到当前聊天")
         }
-        jumpToMsgId = null
+        vm.consumeChatJumpTarget()
     }
 
     // 系统相册选择器（Photo Picker，无需存储权限）
@@ -136,18 +133,7 @@ fun ChatScreen(vm: MainViewModel) {
             TopAppBar(
                 colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = Color.White),
                 title = {
-                    if (searchMode) {
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = {
-                                searchQuery = it
-                                vm.searchCurrentConversation(it)
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("搜索当前聊天记录") },
-                            singleLine = true,
-                        )
-                    } else Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Avatar(id = p.id, nick = p.nick, size = 36.dp)
                         Spacer(Modifier.width(10.dp))
                         Column {
@@ -161,20 +147,35 @@ fun ChatScreen(vm: MainViewModel) {
                     }
                 },
                 navigationIcon = {
-                    TextButton(onClick = {
-                        if (searchMode) {
-                            searchMode = false
-                            searchQuery = ""
-                            vm.clearConversationSearch()
-                        } else vm.backToFriends()
-                    }) { Text("‹", fontSize = 32.sp) }
+                    TextButton(onClick = { vm.backToFriends() }) { Text("‹", fontSize = 32.sp) }
                 },
                 actions = {
-                    if (!searchMode) {
-                        TextButton(onClick = {
-                            showPanel = false
-                            searchMode = true
-                        }) { Text("搜索") }
+                    Box {
+                        TextButton(onClick = { showTopMenu = true }) {
+                            Text("＋", fontSize = 25.sp, color = JitongBlue)
+                        }
+                        DropdownMenu(
+                            expanded = showTopMenu,
+                            onDismissRequest = { showTopMenu = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("查找聊天内容") },
+                                leadingIcon = { Text("⌕", color = JitongBlue, fontSize = 19.sp) },
+                                onClick = {
+                                    showTopMenu = false
+                                    showPanel = false
+                                    vm.openChatSearch()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("删除好友", color = Color(0xFFD93025)) },
+                                leadingIcon = { Text("−", color = Color(0xFFD93025), fontSize = 20.sp) },
+                                onClick = {
+                                    showTopMenu = false
+                                    vm.notify("删除好友功能将在下一步实现")
+                                },
+                            )
+                        }
                     }
                 },
             )
@@ -187,33 +188,7 @@ fun ChatScreen(vm: MainViewModel) {
                 .background(PageBackground)
                 .imePadding(),
         ) {
-            if (searchMode && searchQuery.isNotBlank()) {
-                if (searchResults.isEmpty()) {
-                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        Text("没有找到相关聊天记录", color = SecondaryText)
-                    }
-                } else LazyColumn(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    contentPadding = PaddingValues(vertical = 8.dp),
-                ) {
-                    item {
-                        Text(
-                            "找到 ${searchResults.size} 条结果",
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            color = SecondaryText,
-                            fontSize = 13.sp,
-                        )
-                    }
-                    items(searchResults, key = { it.msgId }) { result ->
-                        ConversationSearchRow(result.content.orEmpty(), result.ts) {
-                            jumpToMsgId = result.msgId
-                            searchMode = false
-                            searchQuery = ""
-                            vm.clearConversationSearch()
-                        }
-                    }
-                }
-            } else LazyColumn(
+            LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .weight(1f)
@@ -227,8 +202,7 @@ fun ChatScreen(vm: MainViewModel) {
                 }
             }
 
-            // 搜索时隐藏发送区，避免搜索和发消息两个输入框同时抢焦点。
-            if (!searchMode) Row(
+            Row(
                 Modifier
                     .fillMaxWidth()
                     .background(Color.White)
@@ -286,29 +260,6 @@ fun ChatScreen(vm: MainViewModel) {
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun ConversationSearchRow(content: String, ts: Long, onClick: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(Color.White)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(content, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(4.dp))
-            Text(
-                SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(ts)),
-                fontSize = 12.sp,
-                color = SecondaryText,
-            )
-        }
-        Text("›", fontSize = 24.sp, color = SecondaryText)
     }
 }
 

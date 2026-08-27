@@ -12,6 +12,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jitong.im.ui.ChatScreen
+import com.jitong.im.ui.ChatSearchScreen
 import com.jitong.im.ui.FriendListScreen
 import com.jitong.im.ui.LoginScreen
 import com.jitong.im.ui.MainViewModel
@@ -54,6 +55,10 @@ private fun AppNav(vm: MainViewModel) {
         Screen.Chat -> {
             BackHandler { vm.backToFriends() }
             ChatScreen(vm)
+        }
+        Screen.ChatSearch -> {
+            BackHandler { vm.backToChat() }
+            ChatSearchScreen(vm)
         }
     }
 }
