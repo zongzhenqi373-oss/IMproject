@@ -8,7 +8,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
     entities = [MessageEntity::class, MessageFtsEntity::class, ConversationEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -39,6 +39,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                // 旧版使用 min*2^20+max，用户 ID 超过 20 位会碰撞；统一迁移为 32+32 位组合。
+                val expression = "((CASE WHEN ownerId < peerId THEN ownerId ELSE peerId END) << 32) " +
+                    "| ((CASE WHEN ownerId < peerId THEN peerId ELSE ownerId END) & 4294967295)"
+                db.execSQL("UPDATE messages SET conversationId = $expression")
+                db.execSQL("UPDATE conversations SET conversationId = $expression")
+                db.execSQL("DROP INDEX IF EXISTS index_messages_ownerId_conversationId_ts")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_messages_ownerId_conversationId_seq " +
+                        "ON messages(ownerId, conversationId, seq)",
+                )
+            }
+        }
+
         /**
          * 打开指定账号的加密本地库；key 由调用方通过 DbKeyManager 拿到（登录后才可用）。
          * 每个 ownerId 各自一个物理库文件（jitong_<ownerId>.db），互不共享密钥，
@@ -57,7 +72,7 @@ abstract class AppDatabase : RoomDatabase() {
             )
                 // Factory 会持有/使用传入的口令数组；传副本，避免影响调用方持有的 key。
                 .openHelperFactory(SupportOpenHelperFactory(key.copyOf()))
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 // 演示项目：非预期升级路径仍直接重建本地库（消息可从服务端漫游/补发恢复）
                 .fallbackToDestructiveMigration()
                 .build()

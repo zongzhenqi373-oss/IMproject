@@ -22,11 +22,12 @@ class ChatStore(context: Context, ownerId: Int, key: ByteArray) {
 
     fun close() = AppDatabase.closeCurrent()
 
-    /** 会话 id：min(id)*K + max(id)，双向同值，与服务端算法一致（K=1<<20） */
+    /** 会话 id：小 ID 放高 32 位、大 ID 放低 32 位，与服务端 makeConversationId 完全一致。 */
     fun conversationId(a: Int, b: Int): Long {
-        val lo = minOf(a, b).toLong()
-        val hi = maxOf(a, b).toLong()
-        return lo * CONV_K + hi
+        require(a > 0 && b > 0) { "用户 ID 必须为正数" }
+        val lo = minOf(a, b).toLong() and 0xFFFF_FFFFL
+        val hi = maxOf(a, b).toLong() and 0xFFFF_FFFFL
+        return (lo shl 32) or hi
     }
 
     /** 消息落库（含 FTS 同事务双写 + 会话行刷新）。重复 msg_id 幂等忽略。
@@ -113,6 +114,18 @@ class ChatStore(context: Context, ownerId: Int, key: ByteArray) {
         (fts + like).distinctBy { it.msgId }.sortedByDescending { it.ts }
     }
 
+    /** 当前单聊内搜索。结果仍按时间倒序，FTS 不可用时 LIKE 查询仍可工作。 */
+    suspend fun searchConversation(ownerId: Int, peerId: Int, kw: String): List<MessageEntity> =
+        withContext(Dispatchers.IO) {
+            val conversationId = conversationId(ownerId, peerId)
+            val pattern = "\"" + kw.replace("\"", "\"\"") + "\"*"
+            val fts = runCatching {
+                db.messageDao().searchConversationFts(ownerId, conversationId, pattern)
+            }.getOrDefault(emptyList())
+            val like = db.messageDao().searchConversationLike(ownerId, conversationId, kw)
+            (fts + like).distinctBy { it.msgId }.sortedByDescending { it.ts }
+        }
+
     // ---------------- 内部 ----------------
 
     private fun writeImageFile(msgId: String, bytes: ByteArray): String {
@@ -179,7 +192,4 @@ class ChatStore(context: Context, ownerId: Int, key: ByteArray) {
         ChatMessage.Status.FAILED -> 4
     }
 
-    companion object {
-        private const val CONV_K = 1L shl 20
-    }
 }
