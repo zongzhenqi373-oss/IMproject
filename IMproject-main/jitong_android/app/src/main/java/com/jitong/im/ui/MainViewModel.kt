@@ -102,6 +102,11 @@ class MainViewModel : ViewModel() {
     private val _searchResults = MutableStateFlow<List<MessageEntity>>(emptyList())
     val searchResults: StateFlow<List<MessageEntity>> = _searchResults
 
+    /** 当前打开的单聊内搜索结果，与主页全局搜索相互独立。 */
+    private val _conversationSearchResults = MutableStateFlow<List<MessageEntity>>(emptyList())
+    val conversationSearchResults: StateFlow<List<MessageEntity>> = _conversationSearchResults
+    private var conversationSearchJob: kotlinx.coroutines.Job? = null
+
     private val _toast = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val toast: SharedFlow<String> = _toast
 
@@ -303,6 +308,29 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch {
             _searchResults.value = s.search(client.myId, kw.trim())
         }
+    }
+
+    /** 只搜索当前聊天；取消上一次任务，避免快速输入时旧查询覆盖新结果。 */
+    fun searchCurrentConversation(kw: String) {
+        conversationSearchJob?.cancel()
+        _conversationSearchResults.value = emptyList()
+        val peerId = _chatPeer.value?.id
+        if (kw.isBlank() || peerId == null) {
+            _conversationSearchResults.value = emptyList()
+            return
+        }
+        val s = store ?: return
+        conversationSearchJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(180)
+            _conversationSearchResults.value =
+                s.searchConversation(client.myId, peerId, kw.trim())
+        }
+    }
+
+    fun clearConversationSearch() {
+        conversationSearchJob?.cancel()
+        conversationSearchJob = null
+        _conversationSearchResults.value = emptyList()
     }
 
     fun notify(msg: String) {
@@ -944,6 +972,7 @@ class MainViewModel : ViewModel() {
         _messages.value = emptyMap()
         _conversations.value = emptyMap()
         _searchResults.value = emptyList()
+        clearConversationSearch()
         _chatPeer.value = null
         _myNick.value = ""
         _myFeeling.value = ""

@@ -79,6 +79,31 @@ interface MessageDao {
            AND content LIKE '%' || :kw || '%' ORDER BY ts DESC LIMIT 100"""
     )
     suspend fun searchLike(ownerId: Int, kw: String): List<MessageEntity>
+
+    /** 单个会话内的全文搜索；conversationId 条件保证不会混入其他聊天。 */
+    @Query(
+        """SELECT m.* FROM messages m JOIN messages_fts f ON m.msgId = f.msgId
+           WHERE m.ownerId = :ownerId AND m.conversationId = :conversationId
+           AND messages_fts MATCH :pattern
+           ORDER BY m.ts DESC LIMIT 100"""
+    )
+    suspend fun searchConversationFts(
+        ownerId: Int,
+        conversationId: Long,
+        pattern: String,
+    ): List<MessageEntity>
+
+    /** 中文子串兜底；只搜索当前会话的文本消息。 */
+    @Query(
+        """SELECT * FROM messages WHERE ownerId = :ownerId
+           AND conversationId = :conversationId AND type = 0
+           AND content LIKE '%' || :kw || '%' ORDER BY ts DESC LIMIT 100"""
+    )
+    suspend fun searchConversationLike(
+        ownerId: Int,
+        conversationId: Long,
+        kw: String,
+    ): List<MessageEntity>
 }
 
 @Dao

@@ -206,10 +206,8 @@ bool Database::open(const std::string& dbPath, int poolSize)
         ");"
         // 漫游索引（roamMessages）
         "CREATE INDEX IF NOT EXISTS idx_msg_conv_ts ON messages(conversation_id, ts);"
-        // 漫游索引（roamMessages）按 seq 顺序
-        "CREATE INDEX IF NOT EXISTS idx_msg_conv_seq ON messages(conversation_id, seq);"
+        // 唯一索引本身即可服务漫游查询，无需再维护一份字段相同的普通索引。
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_msg_conv_seq_unique ON messages(conversation_id, seq);"
-        "CREATE INDEX IF NOT EXISTS idx_msg_recv ON messages(receiver_id, is_delivered, ts);"
         // 漫游会话列表（roamConversations）按 sender_id 分组取末条，需 sender_id 索引避免全表扫描
         "CREATE INDEX IF NOT EXISTS idx_msg_sender ON messages(sender_id);"
         // 认证会话表
@@ -250,6 +248,13 @@ bool Database::open(const std::string& dbPath, int poolSize)
     if (!schemaOk) return false;
     // 兼容旧数据库；重复执行时 duplicate column 错误可安全忽略。
     execOn(c.db, "ALTER TABLE t_user ADD COLUMN password_algo TEXT NOT NULL DEFAULT 'legacy_sha256';");
+    // 清理旧版重复/不匹配索引。离线消息跨会话按服务端时间+行号稳定排序，
+    // 因此索引也按 receiver/is_delivered/ts/id 排列。
+    execOn(c.db, "DROP INDEX IF EXISTS idx_msg_conv_seq;");
+    execOn(c.db, "DROP INDEX IF EXISTS idx_msg_recv;");
+    if (!execOn(c.db,
+        "CREATE INDEX IF NOT EXISTS idx_msg_recv_delivery "
+        "ON messages(receiver_id,is_delivered,ts,id);")) return false;
 
     const int databaseVersion =
     readDatabaseVersion(c.db);
@@ -638,7 +643,7 @@ std::vector<StoredMessage> Database::pullUndelivered(int receiverId)
     sqlite3_stmt* st = nullptr;
     if(sqlite3_prepare_v2(c.db,
         "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq, file_id, file_size "
-        "FROM messages WHERE receiver_id=? AND is_delivered=0 ORDER BY seq ASC;",
+        "FROM messages WHERE receiver_id=? AND is_delivered=0 ORDER BY ts ASC, id ASC;",
         -1, &st, nullptr) != SQLITE_OK){
         return out;
     }

@@ -106,9 +106,9 @@ TokenPair TokenService::issue(
     pair.familyId = randomToken();
     pair.accessToken = randomToken();
     pair.refreshToken = randomToken();
-    pair.accessExpiresAt = now + 15 * 60;
+    pair.accessExpiresAt = now + 5 * 60;
     pair.refreshExpiresAt =
-        now + 30LL * 24 * 60 * 60;
+        now + 2LL * 24 * 60 * 60;
 
     const bool saved = m_db.createAuthSession(
         pair.sessionId,

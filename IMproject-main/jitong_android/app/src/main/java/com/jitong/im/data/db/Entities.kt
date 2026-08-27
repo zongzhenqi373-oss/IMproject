@@ -13,7 +13,7 @@ import androidx.room.PrimaryKey
     tableName = "messages",
     indices = [
         Index(value = ["ownerId", "msgId"], unique = true), // msg_id 幂等：漫游合并/重发不重复（D7）
-        Index(value = ["ownerId", "conversationId", "ts"]), // 聊天页分页：最左前缀
+        Index(value = ["ownerId", "conversationId", "seq"]), // 会话内按服务端权威序号分页/排序
         Index(value = ["ownerId", "conversationId", "status"]), // 失败重发/未读类查询
     ],
 )
