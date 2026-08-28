@@ -35,16 +35,20 @@ void FriendHandler::onAddFriend(const std::shared_ptr<Session>& session,
         error.set_result(ADD_FRIEND_SELF);
     } else if (m_db.isFriend(userId, friendId)) {
         error.set_result(ADD_FRIEND_ALREADY);
-    } else if (auto target = m_presence.get(friendId)) {
-        {
-            std::lock_guard<std::mutex> lock(m_pendingMutex);
-            m_pendingRequests.insert({userId, friendId});
-        }
-        target->deliver(DEF_PROT_ADD_FRIEND_RQ, rq.SerializeAsString());
-        log("[好友] 请求 user=", userId, " target=", friendId);
-        return;
     } else {
-        error.set_result(ADD_FRIEND_OFFLINE);
+        if (!m_db.createFriendRequest(userId, friendId)) {
+            error.set_result(ADD_FRIEND_DB_ERROR);
+        } else {
+            error.set_result(ADD_FRIEND_PENDING);
+            error.set_myid(friendId);
+            UserRecord targetUser;
+            if (m_db.getUser(friendId, targetUser)) error.set_mynick(targetUser.nick);
+            // 在线时额外推送提醒；真正的待处理状态仍以数据库列表为准。
+            if (auto target = m_presence.get(friendId)) {
+                target->deliver(DEF_PROT_ADD_FRIEND_RQ, rq.SerializeAsString());
+            }
+            log("[好友] 申请已持久化 user=", userId, " target=", friendId);
+        }
     }
     session->deliver(DEF_PROT_ADD_FRIEND_RS, error.SerializeAsString());
 }
@@ -58,17 +62,13 @@ void FriendHandler::onAddFriendReply(const std::shared_ptr<Session>& session,
     if (userId <= 0) return;
     rs.set_myid(userId);
 
-    bool hasPendingRequest = false;
-    {
-        std::lock_guard<std::mutex> lock(m_pendingMutex);
-        hasPendingRequest = m_pendingRequests.erase({rs.destid(), userId}) > 0;
+    const bool accepted = rs.result() == ADD_FRIEND_AGREE;
+    if (rs.result() != ADD_FRIEND_AGREE && rs.result() != ADD_FRIEND_REJECT) return;
+    if (!m_db.resolveFriendRequest(rs.destid(), userId, accepted)) {
+        log("[好友] 拒绝无待处理申请的回复 requester=", rs.destid(), " target=", userId);
+        return;
     }
-    if (rs.result() == ADD_FRIEND_AGREE) {
-        if (!hasPendingRequest) {
-            log("[好友] 拒绝无对应申请的同意 requester=", rs.destid(), " target=", userId);
-            return;
-        }
-        m_db.addFriendBidirectional(rs.destid(), userId);
+    if (accepted) {
         handlers::sendFriendInfo(m_db, session, userId, STATUS_ONLINE);
         for (const auto& friendRecord : m_db.getFriends(userId)) {
             handlers::sendFriendInfo(m_db, session, friendRecord.id,
@@ -86,6 +86,25 @@ void FriendHandler::onAddFriendReply(const std::shared_ptr<Session>& session,
         requester->deliver(DEF_PROT_ADD_FRIEND_RS, rs.SerializeAsString());
         log("[好友] 回复 requester=", rs.destid(), " result=", rs.result());
     }
+}
+
+void FriendHandler::onFriendRequestList(const std::shared_ptr<Session>& session,
+                                        const std::string& payload)
+{
+    FriendRequestListRq request;
+    if (!handlers::parsePayload(payload, request)) return;
+    const int userId = session->userId();
+    if (userId <= 0) return;
+    FriendRequestListRs response;
+    for (const auto& row : m_db.pendingFriendRequests(userId)) {
+        auto* item = response.add_requests();
+        item->set_requester_id(row.requesterId);
+        item->set_target_id(row.targetId);
+        item->set_requester_nick(row.requesterNick);
+        item->set_target_nick(row.targetNick);
+        item->set_created_at(row.createdAt);
+    }
+    session->deliver(DEF_PROT_FRIEND_REQUEST_LIST_RS, response.SerializeAsString());
 }
 
 void FriendHandler::onDeleteFriend(const std::shared_ptr<Session> &session, const std::string &payload)

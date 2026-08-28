@@ -185,6 +185,18 @@ bool Database::open(const std::string& dbPath, int poolSize)
         "  PRIMARY KEY(idA, idB)"
         ");"
         "CREATE INDEX IF NOT EXISTS idx_friend_idB ON t_friend(idB);"
+        "CREATE TABLE IF NOT EXISTS friend_requests("
+        "  requester_id INTEGER NOT NULL,"
+        "  target_id INTEGER NOT NULL,"
+        "  status INTEGER NOT NULL DEFAULT 0,"
+        "  created_at INTEGER NOT NULL,"
+        "  updated_at INTEGER NOT NULL,"
+        "  PRIMARY KEY(requester_id,target_id)"
+        ");"
+        "CREATE INDEX IF NOT EXISTS idx_friend_request_target_status "
+        "ON friend_requests(target_id,status,created_at);"
+        "CREATE INDEX IF NOT EXISTS idx_friend_request_sender_status "
+        "ON friend_requests(requester_id,status,created_at);"
         // 全量消息表：漫游/离线单表，conversation_id 会话维度索引（对齐 QQNT PeerUidIndex+MsgTime）
         "CREATE TABLE IF NOT EXISTS messages("
         "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -541,6 +553,114 @@ bool Database::addFriendBidirectional(int idA, int idB)
         if(sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr) != SQLITE_OK){
             rollback();
             return false;
+        }
+        return true;
+    });
+}
+
+bool Database::createFriendRequest(int requesterId, int targetId)
+{
+    return m_writeQueue.submit([requesterId, targetId](sqlite3* db) -> bool {
+        if (requesterId <= 0 || targetId <= 0 || requesterId == targetId) return false;
+        sqlite3_stmt* st = nullptr;
+        const char* sql =
+            "INSERT INTO friend_requests(requester_id,target_id,status,created_at,updated_at) "
+            "VALUES(?,?,0,?,?) ON CONFLICT(requester_id,target_id) DO UPDATE SET "
+            "status=0,created_at=excluded.created_at,updated_at=excluded.updated_at;";
+        if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK) return false;
+        const auto now = static_cast<sqlite3_int64>(std::time(nullptr));
+        sqlite3_bind_int(st, 1, requesterId);
+        sqlite3_bind_int(st, 2, targetId);
+        sqlite3_bind_int64(st, 3, now);
+        sqlite3_bind_int64(st, 4, now);
+        const bool ok = sqlite3_step(st) == SQLITE_DONE;
+        sqlite3_finalize(st);
+        return ok;
+    });
+}
+
+std::vector<FriendRequestRecord> Database::pendingFriendRequests(int userId)
+{
+    std::vector<FriendRequestRecord> out;
+    if (userId <= 0) return out;
+    Conn& c = acquire();
+    std::lock_guard<std::mutex> lock(c.mtx);
+    sqlite3_stmt* st = nullptr;
+    const char* sql =
+        "SELECT r.requester_id,r.target_id,a.name,b.name,r.created_at "
+        "FROM friend_requests r "
+        "JOIN t_user a ON a.id=r.requester_id "
+        "JOIN t_user b ON b.id=r.target_id "
+        "WHERE r.status=0 AND (r.requester_id=? OR r.target_id=?) "
+        "ORDER BY r.created_at DESC;";
+    if (sqlite3_prepare_v2(c.db, sql, -1, &st, nullptr) != SQLITE_OK) return out;
+    sqlite3_bind_int(st, 1, userId);
+    sqlite3_bind_int(st, 2, userId);
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        FriendRequestRecord record;
+        record.requesterId = sqlite3_column_int(st, 0);
+        record.targetId = sqlite3_column_int(st, 1);
+        const unsigned char* requesterNick = sqlite3_column_text(st, 2);
+        const unsigned char* targetNick = sqlite3_column_text(st, 3);
+        record.requesterNick = requesterNick ? reinterpret_cast<const char*>(requesterNick) : "";
+        record.targetNick = targetNick ? reinterpret_cast<const char*>(targetNick) : "";
+        record.createdAt = sqlite3_column_int64(st, 4);
+        out.push_back(std::move(record));
+    }
+    sqlite3_finalize(st);
+    return out;
+}
+
+bool Database::resolveFriendRequest(int requesterId, int targetId, bool accept)
+{
+    return m_writeQueue.submit([requesterId, targetId, accept](sqlite3* db) -> bool {
+        if (sqlite3_exec(db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) != SQLITE_OK) return false;
+        auto rollback = [db] { sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr); };
+        sqlite3_stmt* update = nullptr;
+        if (sqlite3_prepare_v2(db,
+            "UPDATE friend_requests SET status=?,updated_at=? "
+            "WHERE requester_id=? AND target_id=? AND status=0;",
+            -1, &update, nullptr) != SQLITE_OK) { rollback(); return false; }
+        sqlite3_bind_int(update, 1, accept ? 1 : 2);
+        sqlite3_bind_int64(update, 2, static_cast<sqlite3_int64>(std::time(nullptr)));
+        sqlite3_bind_int(update, 3, requesterId);
+        sqlite3_bind_int(update, 4, targetId);
+        const bool updated = sqlite3_step(update) == SQLITE_DONE && sqlite3_changes(db) == 1;
+        sqlite3_finalize(update);
+        if (!updated) { rollback(); return false; }
+
+        if (accept) {
+            sqlite3_stmt* insert = nullptr;
+            if (sqlite3_prepare_v2(db,
+                "INSERT OR IGNORE INTO t_friend(idA,idB) VALUES(?,?);",
+                -1, &insert, nullptr) != SQLITE_OK) { rollback(); return false; }
+            const std::pair<int,int> pairs[] = {{requesterId,targetId},{targetId,requesterId}};
+            for (const auto& pair : pairs) {
+                sqlite3_reset(insert);
+                sqlite3_clear_bindings(insert);
+                sqlite3_bind_int(insert, 1, pair.first);
+                sqlite3_bind_int(insert, 2, pair.second);
+                if (sqlite3_step(insert) != SQLITE_DONE) {
+                    sqlite3_finalize(insert); rollback(); return false;
+                }
+            }
+            sqlite3_finalize(insert);
+
+            // 双方恰好同时申请时，接受任意一条后另一条也不应继续显示为“等待中”。
+            sqlite3_stmt* reverse = nullptr;
+            if (sqlite3_prepare_v2(db,
+                "UPDATE friend_requests SET status=1,updated_at=? "
+                "WHERE requester_id=? AND target_id=? AND status=0;",
+                -1, &reverse, nullptr) != SQLITE_OK) { rollback(); return false; }
+            sqlite3_bind_int64(reverse, 1, static_cast<sqlite3_int64>(std::time(nullptr)));
+            sqlite3_bind_int(reverse, 2, targetId);
+            sqlite3_bind_int(reverse, 3, requesterId);
+            const bool reverseOk = sqlite3_step(reverse) == SQLITE_DONE;
+            sqlite3_finalize(reverse);
+            if (!reverseOk) { rollback(); return false; }
+        }
+        if (sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+            rollback(); return false;
         }
         return true;
     });

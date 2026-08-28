@@ -35,6 +35,14 @@ struct FriendRecord {
     std::string feeling;
 };
 
+struct FriendRequestRecord {
+    int requesterId = 0;
+    int targetId = 0;
+    std::string requesterNick;
+    std::string targetNick;
+    std::int64_t createdAt = 0;
+};
+
 // 全量消息行（漫游/离线共用单表，is_delivered 区分）
 struct StoredMessage {
     std::string msgId;
@@ -80,6 +88,9 @@ public:
     bool isFriend(int idA, int idB);
     std::vector<FriendRecord> getFriends(int id);
     bool addFriendBidirectional(int idA, int idB);
+    bool createFriendRequest(int requesterId, int targetId);
+    std::vector<FriendRequestRecord> pendingFriendRequests(int userId);
+    bool resolveFriendRequest(int requesterId, int targetId, bool accept);
     //删除好友
     bool removeFriendBidirectional(int idA, int idB);
     // 按昵称查用户 id（0=不存在）

@@ -46,6 +46,8 @@ Dispatcher::Dispatcher(Database& db, Presence& presence,
         [this](const auto& s, const auto& p) { m_friend->onAddFriend(s, p); });
     m_router.add(DEF_PROT_ADD_FRIEND_RS,
         [this](const auto& s, const auto& p) { m_friend->onAddFriendReply(s, p); });
+    m_router.add(DEF_PROT_FRIEND_REQUEST_LIST_RQ,
+        [this](const auto& s, const auto& p) { m_friend->onFriendRequestList(s, p); });
 
     m_router.add(DEF_PROT_DELETE_FRIEND_RQ,
         [this](const auto& s, const auto& p) { m_friend->onDeleteFriend(s, p); });

@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jitong.im.net.Protocol
+import com.jitong.im.net.ImClient
 import com.jitong.im.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -37,11 +38,12 @@ fun FriendListScreen(vm: MainViewModel) {
     val friends by vm.friends.collectAsStateWithLifecycle()
     val conversations by vm.conversations.collectAsStateWithLifecycle()
     val results by vm.searchResults.collectAsStateWithLifecycle()
-    val incomingRequest by vm.incomingFriendRequest.collectAsStateWithLifecycle()
+    val friendRequests by vm.friendRequests.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(HomeTab.Messages) }
     var query by rememberSaveable { mutableStateOf("") }
     var showAddFriend by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
+    var showNewFriends by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = PageBackground,
@@ -60,6 +62,10 @@ fun FriendListScreen(vm: MainViewModel) {
                     friends = friends,
                     onOpen = vm::openChat,
                     onAddFriend = { showAddFriend = true },
+                    onNewFriends = {
+                        showNewFriends = true
+                        vm.loadFriendRequests()
+                    },
                     onGroup = { vm.notify("群聊功能即将上线") },
                 )
                 HomeTab.Me -> MeTab(vm.myId, myNick, myFeeling, vm::notify, vm::logout)
@@ -78,13 +84,14 @@ fun FriendListScreen(vm: MainViewModel) {
         onDismiss = { showAddFriend = false },
         onSend = { vm.sendAddFriendRequest(it); showAddFriend = false },
     )
-    incomingRequest?.let { req ->
-        AlertDialog(
-            onDismissRequest = {},
-            title = { Text("新的朋友") },
-            text = { Text("${req.fromNick} 请求添加你为好友") },
-            confirmButton = { TextButton(onClick = { vm.respondFriendRequest(Protocol.ADD_FRIEND_AGREE) }) { Text("同意") } },
-            dismissButton = { TextButton(onClick = { vm.respondFriendRequest(Protocol.ADD_FRIEND_REJECT) }) { Text("拒绝") } },
+    if (showNewFriends) {
+        NewFriendsDialog(
+            myId = vm.myId,
+            requests = friendRequests,
+            onDismiss = { showNewFriends = false },
+            onAccept = { vm.respondFriendRequest(it, Protocol.ADD_FRIEND_AGREE) },
+            onReject = { vm.respondFriendRequest(it, Protocol.ADD_FRIEND_REJECT) },
+            onAdd = { showNewFriends = false; showAddFriend = true },
         )
     }
 }
@@ -123,7 +130,10 @@ private fun MessagesTab(
 }
 
 @Composable
-private fun ContactsTab(friends: List<Friend>, onOpen: (Friend) -> Unit, onAddFriend: () -> Unit, onGroup: () -> Unit) {
+private fun ContactsTab(
+    friends: List<Friend>, onOpen: (Friend) -> Unit, onAddFriend: () -> Unit,
+    onNewFriends: () -> Unit, onGroup: () -> Unit,
+) {
     HomeHeader("联系人", onAddFriend)
     var query by rememberSaveable { mutableStateOf("") }
     SearchBox(query, { query = it }, "搜索联系人")
@@ -131,7 +141,7 @@ private fun ContactsTab(friends: List<Friend>, onOpen: (Friend) -> Unit, onAddFr
         item {
             Surface(shape = RoundedCornerShape(16.dp)) {
                 Column {
-                    ContactAction("＋", "新的朋友", "好友申请") { onAddFriend() }
+                    ContactAction("＋", "新的朋友", "好友申请") { onNewFriends() }
                     HorizontalDivider(Modifier.padding(start = 70.dp), color = Color(0xFFEDF0F5))
                     ContactAction("♟", "群聊", "创建和管理群聊") { onGroup() }
                 }
@@ -276,6 +286,67 @@ private fun groupedContacts(friends: List<Friend>): Map<String, List<Friend>> = 
                 label = { Text(item.label) },
                 colors = NavigationBarItemDefaults.colors(selectedIconColor = JitongBlue, selectedTextColor = JitongBlue, indicatorColor = PaleBlue),
             )
+        }
+    }
+}
+
+@Composable
+private fun NewFriendsDialog(
+    myId: Int,
+    requests: List<ImClient.Event.FriendRequestItem>,
+    onDismiss: () -> Unit,
+    onAccept: (ImClient.Event.FriendRequestItem) -> Unit,
+    onReject: (ImClient.Event.FriendRequestItem) -> Unit,
+    onAdd: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(24.dp), color = Color.White, shadowElevation = 12.dp) {
+            Column(Modifier.fillMaxWidth().heightIn(max = 580.dp).padding(20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("新的朋友", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = onAdd) { Text("添加好友") }
+                    TextButton(onClick = onDismiss) { Text("关闭") }
+                }
+                Text("收到的申请和等待对方验证的申请", color = SecondaryText, fontSize = 12.sp)
+                Spacer(Modifier.height(12.dp))
+                if (requests.isEmpty()) {
+                    Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
+                        Text("暂无待处理的好友申请", color = SecondaryText)
+                    }
+                } else {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(requests, key = { "${it.requesterId}:${it.targetId}" }) { request ->
+                            val incoming = request.targetId == myId
+                            val peerId = if (incoming) request.requesterId else request.targetId
+                            val peerNick = if (incoming) request.requesterNick else request.targetNick
+                            Surface(color = Color(0xFFF7F9FC), shape = RoundedCornerShape(16.dp)) {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Avatar(peerId, peerNick, 44.dp)
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(peerNick.ifBlank { "即通用户$peerId" }, fontWeight = FontWeight.SemiBold)
+                                        Text(
+                                            if (incoming) "请求添加你为好友" else "等待对方验证",
+                                            color = SecondaryText,
+                                            fontSize = 12.sp,
+                                        )
+                                    }
+                                    if (incoming) {
+                                        TextButton(onClick = { onReject(request) }) { Text("拒绝", color = SecondaryText) }
+                                        Button(onClick = { onAccept(request) }, shape = RoundedCornerShape(12.dp)) { Text("同意") }
+                                    } else {
+                                        Text("等待中", color = JitongBlue, fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

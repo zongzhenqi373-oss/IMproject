@@ -31,7 +31,6 @@ data class Friend(
 )
 
 //添加好友请求和回复
-data class IncomingFriendRequest(val fromId: Int, val fromNick: String)
 
 enum class MsgKind { TEXT, IMAGE, FILE }
 
@@ -92,8 +91,8 @@ class MainViewModel : ViewModel() {
     val friends: StateFlow<List<Friend>> = _friends
 
     /**添加好友*/
-    private val _incomingFriendRequest = MutableStateFlow<IncomingFriendRequest?>(null)
-    val incomingFriendRequest: StateFlow<IncomingFriendRequest?> = _incomingFriendRequest
+    private val _friendRequests = MutableStateFlow<List<ImClient.Event.FriendRequestItem>>(emptyList())
+    val friendRequests: StateFlow<List<ImClient.Event.FriendRequestItem>> = _friendRequests
 
     /** 会话消息：peerId -> 有序消息列表（登录后从 Room 装载，运行期内存驻留） */
     private val _messages = MutableStateFlow<Map<Int, List<ChatMessage>>>(emptyMap())
@@ -246,10 +245,18 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch { client.sendAddFriendRq(myNick.value, friNick) }
     }
 
-    fun respondFriendRequest(result: Int) {
-        val req = _incomingFriendRequest.value ?: return
-        viewModelScope.launch { client.sendAddFriendRs(req.fromId, req.fromNick, myNick.value, result) }
-        _incomingFriendRequest.value = null
+    fun loadFriendRequests() {
+        viewModelScope.launch { client.requestFriendRequests() }
+    }
+
+    fun respondFriendRequest(request: ImClient.Event.FriendRequestItem, result: Int) {
+        if (request.targetId != client.myId) return
+        viewModelScope.launch {
+            client.sendAddFriendRs(request.requesterId, request.requesterNick, myNick.value, result)
+        }
+        _friendRequests.value = _friendRequests.value.filterNot {
+            it.requesterId == request.requesterId && it.targetId == request.targetId
+        }
     }
 
     /** 删除当前聊天对象；最终是否删除成功以服务端回执为准。 */
@@ -754,10 +761,8 @@ class MainViewModel : ViewModel() {
                 }
 
                 is ImClient.Event.AddFriendRequestReceived -> {
-                    // 收到别人发来的好友请求：
-                    // 赋值给 StateFlow，UI 层（Activity/Fragment）监听到变化后，
-                    // 就可以弹出一个 Dialog 问用户“是否同意 fromNick 的好友请求”
-                    _incomingFriendRequest.value = IncomingFriendRequest(e.fromId, e.fromNick)
+                    // 在线提醒只触发刷新；申请的权威状态在服务端 friend_requests 表。
+                    loadFriendRequests()
                 }
 
                 is ImClient.Event.AddFriendResult -> {
@@ -769,9 +774,22 @@ class MainViewModel : ViewModel() {
                         Protocol.ADD_FRIEND_NOTEXIT -> "用户 ${e.peerNick} 不存在"
                         Protocol.ADD_FRIEND_SELF -> "不能添加自己为好友"
                         Protocol.ADD_FRIEND_ALREADY -> "对方 ${e.peerNick} 已经是你好友，请勿重复添加"
+                        Protocol.ADD_FRIEND_PENDING -> "好友申请已发送，等待对方验证"
+                        Protocol.ADD_FRIEND_DB_ERROR -> "好友申请保存失败，请稍后重试"
                         else -> "好友请求处理失败"
                     }
+                    if (e.result == Protocol.ADD_FRIEND_AGREE ||
+                        e.result == Protocol.ADD_FRIEND_REJECT) {
+                        _friendRequests.value = _friendRequests.value.filterNot {
+                            (it.requesterId == client.myId && it.targetId == e.peerId) ||
+                                (it.requesterId == e.peerId && it.targetId == client.myId)
+                        }
+                    }
                     notify(msg)
+                }
+
+                is ImClient.Event.FriendRequestsLoaded -> {
+                    _friendRequests.value = e.requests
                 }
 
                 is ImClient.Event.DeleteFriendResult -> {
@@ -1140,6 +1158,7 @@ class MainViewModel : ViewModel() {
         roamHasMore.clear()
         roamLoading.clear()
         _friends.value = emptyList()
+        _friendRequests.value = emptyList()
         _messages.value = emptyMap()
         _conversations.value = emptyMap()
         _searchResults.value = emptyList()

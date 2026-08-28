@@ -39,6 +39,26 @@ int main()
 
     imsrv::Database db;
     assert(db.open(dbPath, 4)); // 多连接才能真实覆盖原来的 MAX(seq)+1 竞争窗口
+    db.seedIfEmpty();
+
+    // 好友申请必须在离线状态下持久化，并同时出现在发起方/接收方的待处理列表中。
+    assert(db.createFriendRequest(1, 2));
+    const auto requesterView = db.pendingFriendRequests(1);
+    const auto targetView = db.pendingFriendRequests(2);
+    assert(requesterView.size() == 1);
+    assert(targetView.size() == 1);
+    assert(requesterView.front().requesterId == 1);
+    assert(requesterView.front().targetId == 2);
+    assert(db.resolveFriendRequest(1, 2, false));
+    assert(db.pendingFriendRequests(1).empty());
+    assert(db.pendingFriendRequests(2).empty());
+
+    // 被拒绝后允许重新申请；同意操作与双向好友关系写入属于同一事务。
+    assert(db.createFriendRequest(1, 2));
+    assert(db.resolveFriendRequest(1, 2, true));
+    assert(db.isFriend(1, 2));
+    assert(db.isFriend(2, 1));
+    assert(db.removeFriendBidirectional(1, 2));
 
     //增加两个会话独立分配seq的测试
     imsrv::StoredMessage firstA;

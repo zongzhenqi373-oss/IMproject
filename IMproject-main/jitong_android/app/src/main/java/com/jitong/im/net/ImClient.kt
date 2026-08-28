@@ -64,6 +64,15 @@ class ImClient {
         /** 好友添加回执：result=添加结果，peerId=被添加人的id，peerNick=被添加人的nick*/
         data class AddFriendResult(val result: Int, val peerId: Int, val peerNick: String) : Event
 
+        data class FriendRequestItem(
+            val requesterId: Int,
+            val targetId: Int,
+            val requesterNick: String,
+            val targetNick: String,
+            val createdAt: Long,
+        )
+        data class FriendRequestsLoaded(val requests: List<FriendRequestItem>) : Event
+
         data class DeleteFriendResult(val result: Int, val friendId: Int) : Event
 
 
@@ -285,6 +294,13 @@ class ImClient {
         send(Protocol.ADD_FRIEND_RS, rs.toByteArray())
     }
 
+    suspend fun requestFriendRequests() {
+        send(
+            Protocol.FRIEND_REQUEST_LIST_RQ,
+            Im.FriendRequestListRq.getDefaultInstance().toByteArray(),
+        )
+    }
+
     /**发送删除好友请求*/
     suspend fun deleteFriend(friendId: Int){
         val rq = Im.DeleteFriendRq.newBuilder()
@@ -502,6 +518,19 @@ class ImClient {
                 val rs = Im.AddFriendRs.parseFrom(f.payload)
                 //回执中应该传的是被添加方id和被添加方nick，以及结果，回执中myid就是被添加方的id，mynick就是被添加方的nick
                 _events.emit(Event.AddFriendResult(rs.result,rs.myid,rs.mynick))
+            }
+
+            Protocol.FRIEND_REQUEST_LIST_RS -> {
+                val rs = Im.FriendRequestListRs.parseFrom(f.payload)
+                _events.emit(Event.FriendRequestsLoaded(rs.requestsList.map {
+                    Event.FriendRequestItem(
+                        requesterId = it.requesterId,
+                        targetId = it.targetId,
+                        requesterNick = it.requesterNick,
+                        targetNick = it.targetNick,
+                        createdAt = it.createdAt,
+                    )
+                }))
             }
 
             /**删除好友*/
