@@ -62,6 +62,9 @@ int main()
 
     // 6. 协议号范围校验逻辑（dispatch 边界）
     assert(DEF_PROT_FRIEND_OFFLINE - DEF_BASE < DEF_PROT_COUNT);
+    assert(DEF_PROT_AI_REPLY_RQ - DEF_BASE < DEF_PROT_COUNT);
+    assert(DEF_PROT_AI_REPLY_RS - DEF_BASE < DEF_PROT_COUNT);
+    assert(DEF_PROT_AI_CANCEL_RQ - DEF_BASE < DEF_PROT_COUNT);
     assert(DEF_PROT_REGISTER_RQ == DEF_BASE);
 
     // 7. SHA-256 正确性（对齐 QQNT 密码哈希，用标准测试向量校验）

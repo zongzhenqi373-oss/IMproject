@@ -12,6 +12,7 @@ import com.jitong.im.net.ImClient
 import com.jitong.im.net.HttpMediaClient
 import com.jitong.im.net.Protocol
 import com.jitong.im.net.sha256Hex
+import im.proto.Im
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -57,6 +58,13 @@ data class ChatMessage(
     enum class Status { SENDING, DELIVERED, OFFLINE_STORED, RECEIVED, FAILED }
 }
 
+sealed interface AiReplyUiState {
+    data object Idle : AiReplyUiState
+    data class Loading(val requestId: String, val attempt: Int) : AiReplyUiState
+    data class Suggestions(val requestId: String, val items: List<String>) : AiReplyUiState
+    data class Error(val message: String, val canRetry: Boolean = true) : AiReplyUiState
+}
+
 class MainViewModel : ViewModel() {
 
     private val client = ImClient()
@@ -97,6 +105,12 @@ class MainViewModel : ViewModel() {
 
     private val _chatPeer = MutableStateFlow<Friend?>(null)
     val chatPeer: StateFlow<Friend?> = _chatPeer
+
+    private val _aiReplyState = MutableStateFlow<AiReplyUiState>(AiReplyUiState.Idle)
+    val aiReplyState: StateFlow<AiReplyUiState> = _aiReplyState
+    private var aiTimeoutJob: kotlinx.coroutines.Job? = null
+    private var aiAttempt = 0
+    private var lastAiTone = "自然、简洁"
 
     /** 搜索结果（聊天记录） */
     private val _searchResults = MutableStateFlow<List<MessageEntity>>(emptyList())
@@ -199,6 +213,7 @@ class MainViewModel : ViewModel() {
     // ---------------- 导航 ----------------
 
     fun openChat(friend: Friend) {
+        clearAiReply(cancelRemote = true)
         clearConversationSearch()
         _chatJumpTarget.value = null
         _chatPeer.value = friend
@@ -254,6 +269,7 @@ class MainViewModel : ViewModel() {
     }
 
     fun backToFriends() {
+        clearAiReply(cancelRemote = true)
         clearConversationSearch()
         _chatJumpTarget.value = null
         _screen.value = Screen.FriendList
@@ -295,6 +311,63 @@ class MainViewModel : ViewModel() {
     }
 
     // ---------------- 聊天 ----------------
+
+    fun requestAiReply(tone: String = lastAiTone) {
+        val peer = _chatPeer.value ?: return
+        if (!client.connected) {
+            _aiReplyState.value = AiReplyUiState.Error("连接已断开，请稍后重试")
+            return
+        }
+        if (_aiReplyState.value is AiReplyUiState.Loading) return
+
+        // 服务端按 UTF-8 字节限制32；中文最多取10个字符，避免多字节越界。
+        lastAiTone = tone.take(10).ifBlank { "自然、简洁" }
+        aiAttempt += 1
+        val requestId = UUID.randomUUID().toString()
+        _aiReplyState.value = AiReplyUiState.Loading(requestId, aiAttempt)
+        aiTimeoutJob?.cancel()
+        aiTimeoutJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(AI_UI_TIMEOUT_MS)
+            val loading = _aiReplyState.value as? AiReplyUiState.Loading
+            if (loading?.requestId == requestId) {
+                runCatching { client.cancelAiReply(requestId) }
+                _aiReplyState.value = AiReplyUiState.Error("AI 回复超时，请重试")
+            }
+        }
+        viewModelScope.launch {
+            runCatching { client.requestAiReply(peer.id, requestId, lastAiTone, 3) }
+                .onFailure {
+                    aiTimeoutJob?.cancel()
+                    val loading = _aiReplyState.value as? AiReplyUiState.Loading
+                    if (loading?.requestId == requestId) {
+                        _aiReplyState.value = AiReplyUiState.Error("AI 请求发送失败，请重试")
+                    }
+                }
+        }
+    }
+
+    fun retryAiReply() {
+        if (_aiReplyState.value is AiReplyUiState.Loading) return
+        requestAiReply(lastAiTone)
+    }
+
+    fun cancelAiReply() {
+        clearAiReply(cancelRemote = true)
+    }
+
+    fun dismissAiReplies() {
+        clearAiReply(cancelRemote = false)
+    }
+
+    private fun clearAiReply(cancelRemote: Boolean) {
+        val requestId = (_aiReplyState.value as? AiReplyUiState.Loading)?.requestId
+        aiTimeoutJob?.cancel()
+        aiTimeoutJob = null
+        _aiReplyState.value = AiReplyUiState.Idle
+        if (cancelRemote && requestId != null && client.connected) {
+            viewModelScope.launch { runCatching { client.cancelAiReply(requestId) } }
+        }
+    }
 
     fun send(text: String) {
         val peer = _chatPeer.value ?: return
@@ -500,6 +573,8 @@ class MainViewModel : ViewModel() {
         // 展示名来自网络，物理文件名必须去掉路径成分，不能直接信任。
         val safeName = java.io.File(msg.fileName).name.ifBlank { "file" }.take(255)
         val finalFile = java.io.File(dir, "${effectiveFileId}_$safeName")
+        // 接收方下载完成后是 RECEIVED；发送方只是补回本地副本，不能因此丢失原发送回执状态。
+        val completedStatus = if (msg.fromMe) msg.status else ChatMessage.Status.RECEIVED
         updateFileStatus(msg.peerId, msg.msgId, ChatMessage.Status.SENDING) // 复用"进行中"
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
@@ -510,10 +585,10 @@ class MainViewModel : ViewModel() {
             }.onSuccess {
                 downloads.remove(effectiveFileId)
                 updateFileLocalPath(msg.peerId, msg.msgId, finalFile.absolutePath)
-                updateFileStatus(msg.peerId, msg.msgId, ChatMessage.Status.RECEIVED)
+                updateFileStatus(msg.peerId, msg.msgId, completedStatus)
             }.onFailure {
                 downloads.remove(effectiveFileId)
-                updateFileStatus(msg.peerId, msg.msgId, ChatMessage.Status.RECEIVED)
+                updateFileStatus(msg.peerId, msg.msgId, completedStatus)
                 notify("下载失败：${it.message ?: it.javaClass.simpleName}")
             }
         }
@@ -603,6 +678,30 @@ class MainViewModel : ViewModel() {
                 }
 
                 is ImClient.Event.LogoutResult -> Unit
+
+                is ImClient.Event.AiReplyResult -> {
+                    val loading = _aiReplyState.value as? AiReplyUiState.Loading
+                    if (loading?.requestId == e.requestId && e.done) {
+                        aiTimeoutJob?.cancel()
+                        aiTimeoutJob = null
+                        _aiReplyState.value = if (
+                        e.status == Im.AiReplyStatus.AI_REPLY_OK &&
+                            e.suggestions.isNotEmpty()
+                        ) {
+                            AiReplyUiState.Suggestions(e.requestId, e.suggestions.take(3))
+                        } else {
+                            val message = e.errorMessage.ifBlank {
+                                when (e.status) {
+                                    Im.AiReplyStatus.AI_REPLY_RATE_LIMITED -> "请求过于频繁，请稍后再试"
+                                    Im.AiReplyStatus.AI_REPLY_BUSY -> "AI 正在处理其他请求"
+                                    Im.AiReplyStatus.AI_REPLY_NOT_CONFIGURED -> "AI 功能暂不可用"
+                                    else -> "AI 回复生成失败"
+                                }
+                            }
+                            AiReplyUiState.Error(message)
+                        }
+                    }
+                }
 
                 is ImClient.Event.UserOrFriendInfo -> {
                     if (e.userId == client.myId) {
@@ -696,8 +795,7 @@ class MainViewModel : ViewModel() {
                         if (!item.isText && !item.isImage && !item.isFile) continue
                         val peerId = if (item.fromId == client.myId) item.toId else item.fromId
                         val fromMe = item.fromId == client.myId
-                        append(
-                            ChatMessage(
+                        val historyMessage = ChatMessage(
                                 msgId = item.msgId, peerId = peerId, fromMe = fromMe,
                                 text = item.text,
                                 kind = when {
@@ -714,10 +812,21 @@ class MainViewModel : ViewModel() {
                                 contentType = item.contentType,
                                 sha256 = item.sha256,
                                 status = if (fromMe) ChatMessage.Status.DELIVERED else ChatMessage.Status.RECEIVED,
-                            ),
+                            )
+                        append(
+                            historyMessage,
                             incrUnread = false,
                             updateConversation = false,
                         )
+                        // 漫游消息只有文件元数据，不携带图片字节。与实时 MediaCard 保持一致，
+                        // 在本地没有可用缓存时通过鉴权 HTTP 文件服务下载后再交给 UI 展示。
+                        if (item.isImage) {
+                            val effective = _messages.value[peerId].orEmpty()
+                                .firstOrNull { it.msgId == item.msgId } ?: historyMessage
+                            val localAvailable = effective.imageBytes != null ||
+                                effective.localPath?.let { java.io.File(it).isFile } == true
+                            if (!localAvailable) downloadFile(effective)
+                        }
                     }
                     // 更新分页游标：minSeq 为本批最小 seq，供下次上拉；hasMore 决定是否继续
                     if (e.minSeq > 0) {
@@ -747,6 +856,7 @@ class MainViewModel : ViewModel() {
                 }
 
                 ImClient.Event.Disconnected -> {
+                    clearAiReply(cancelRemote = false)
                     // 连接断开意味着本次请求不可能再收到响应；允许重连后用同一 requestId 重试。
                     refreshMutex.withLock { refreshRequestInFlight = false }
                     if (!expectDisconnect && _screen.value != Screen.Login) {
@@ -791,12 +901,16 @@ class MainViewModel : ViewModel() {
         if (duplicateIndex >= 0) {
             // 离线补发可能撞上本地遗留的同 msgId 文件记录。补发数据是服务端权威状态，
             // 必须修正旧的 SENDING/空元数据，不能因 msgId 幂等而整条忽略。
-            if (msg.kind == MsgKind.FILE && !msg.fromMe) {
+            if ((msg.kind == MsgKind.FILE || msg.kind == MsgKind.IMAGE) && !msg.fromMe) {
                 val old = conv[duplicateIndex]
                 val repaired = old.copy(
                     fileId = msg.fileId.ifBlank { old.fileId },
                     fileName = msg.fileName.ifBlank { old.fileName },
                     fileSize = if (msg.fileSize > 0) msg.fileSize else old.fileSize,
+                    contentType = msg.contentType.ifBlank { old.contentType },
+                    sha256 = msg.sha256.ifBlank { old.sha256 },
+                    imgW = if (msg.imgW > 0) msg.imgW else old.imgW,
+                    imgH = if (msg.imgH > 0) msg.imgH else old.imgH,
                     ts = if (msg.ts > 0) msg.ts else old.ts,
                     seq = if (msg.seq > 0) msg.seq else old.seq,
                     status = ChatMessage.Status.RECEIVED,
@@ -989,6 +1103,7 @@ class MainViewModel : ViewModel() {
     }
 
     private fun resetToLogin() {
+        clearAiReply(cancelRemote = false)
         reconnecting = false
         refreshRequestInFlight = false
         reconnectJob?.cancel()
@@ -1012,6 +1127,7 @@ class MainViewModel : ViewModel() {
     }
 
     override fun onCleared() {
+        aiTimeoutJob?.cancel()
         client.disconnect()
         store?.close()
         store = null
@@ -1021,5 +1137,6 @@ class MainViewModel : ViewModel() {
     companion object {
         /** 漫游历史每页条数 */
         private const val PAGE_SIZE = 20
+        private const val AI_UI_TIMEOUT_MS = 20_000L
     }
 }

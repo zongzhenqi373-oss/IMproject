@@ -97,4 +97,30 @@ class ProtocolCodecTest {
         assertEquals("uuid-1", parsed.msgId)
         assertTrue(rq.toByteArray().size < 64) // 中文 UTF-8 正常编码
     }
+
+    @Test
+    fun `AI 请求响应与取消协议可往返`() {
+        val request = Im.AiReplyRq.newBuilder()
+            .setRequestId("ai-uuid-1")
+            .setPeerId(2)
+            .setTone("自然")
+            .setMaxSuggestions(3)
+            .build()
+        val requestFrame = Frame.readFrom(
+            DataInputStream(ByteArrayInputStream(Frame.encode(Protocol.AI_REPLY_RQ, request.toByteArray())))
+        )
+        assertEquals(Protocol.AI_REPLY_RQ, requestFrame?.type)
+        assertEquals("ai-uuid-1", Im.AiReplyRq.parseFrom(requestFrame!!.payload).requestId)
+
+        val response = Im.AiReplyRs.newBuilder()
+            .setRequestId("ai-uuid-1")
+            .setStatus(Im.AiReplyStatus.AI_REPLY_OK)
+            .addSuggestions("好的，晚点见")
+            .build()
+        assertEquals("好的，晚点见", Im.AiReplyRs.parseFrom(response.toByteArray()).suggestionsList.single())
+
+        val cancel = Im.AiCancelRq.newBuilder().setRequestId("ai-uuid-1").build()
+        assertEquals("ai-uuid-1", Im.AiCancelRq.parseFrom(cancel.toByteArray()).requestId)
+        assertEquals(Protocol.DEF_BASE + 31, Protocol.AI_CANCEL_RQ)
+    }
 }

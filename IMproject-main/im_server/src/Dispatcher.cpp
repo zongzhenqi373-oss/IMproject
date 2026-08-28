@@ -4,6 +4,7 @@
 #include "Session.h"
 #include "client_core/Protocol.h"
 #include "handlers/AuthHandler.h"
+#include "handlers/AiHandler.h"
 #include "handlers/FriendHandler.h"
 #include "handlers/MessageHandler.h"
 #include "handlers/RoamHandler.h"
@@ -16,6 +17,7 @@ using namespace im::proto;
 Dispatcher::Dispatcher(Database& db, Presence& presence,
                        TokenService& tokens, HttpFileServer& files)
     : m_auth(std::make_unique<AuthHandler>(db, presence, tokens))
+    , m_ai(std::make_unique<AiHandler>(db))
     , m_message(std::make_unique<MessageHandler>(db, presence, files))
     , m_friend(std::make_unique<FriendHandler>(db, presence))
     , m_roam(std::make_unique<RoamHandler>(db))
@@ -31,6 +33,11 @@ Dispatcher::Dispatcher(Database& db, Presence& presence,
         [this](const auto& s, const auto& p) { m_auth->onTokenRefresh(s, p); });
     m_router.add(DEF_PROT_LOGOUT_RQ,
         [this](const auto& s, const auto& p) { m_auth->onLogout(s, p); });
+
+    m_router.add(DEF_PROT_AI_REPLY_RQ,
+        [this](const auto& s, const auto& p) { m_ai->onReply(s, p); });
+    m_router.add(DEF_PROT_AI_CANCEL_RQ,
+        [this](const auto& s, const auto& p) { m_ai->onCancel(s, p); });
 
     m_router.add(DEF_PROT_CHAT_INFO_RQ,
         [this](const auto& s, const auto& p) { m_message->onChat(s, p); });

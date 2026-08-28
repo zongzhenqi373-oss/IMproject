@@ -186,3 +186,39 @@ message RoamMsgRs {
   bool has_more = 3;            // 是否还有更早的（本批返回条数 == limit 即认为有）
   int64 min_seq = 4;           // 本批最小 seq（下次上拉游标）
 }
+
+// ---------------- AI 辅助回复（服务端代理，API Key 不下发客户端） ----------------
+enum AiReplyStatus {
+  AI_REPLY_OK = 0;
+  AI_REPLY_INVALID_REQUEST = 1;
+  AI_REPLY_UNAUTHORIZED = 2;
+  AI_REPLY_NOT_FRIEND = 3;
+  AI_REPLY_RATE_LIMITED = 4;
+  AI_REPLY_BUSY = 5;
+  AI_REPLY_NOT_CONFIGURED = 6;
+  AI_REPLY_UPSTREAM_ERROR = 7;
+}
+
+// C→S：只提交会话对端，服务端以登录态为准并自行读取最近消息。
+message AiReplyRq {
+  string request_id = 1;       // 客户端 UUID，用于关联响应；最长 64 字节
+  int32 peer_id = 2;           // 当前单聊对端
+  string tone = 3;             // 可选：自然、正式、幽默等；最长 32 字节
+  int32 max_suggestions = 4;   // 1～3，默认 3
+}
+
+// S→C：候选内容仅用于 UI 展示，不会自动作为聊天消息发送。
+message AiReplyRs {
+  string request_id = 1;
+  AiReplyStatus status = 2;
+  repeated string suggestions = 3;
+  string error_message = 4;    // 面向客户端的安全错误，不包含 API Key/上游响应正文
+  bool partial = 5;            // 流式扩展预留：true 表示本包是增量
+  int32 chunk_index = 6;       // 流式扩展预留：从0递增
+  bool done = 7;               // 当前非流式实现恒为 true
+}
+
+// C→S：取消本地等待；服务端若尚未调用上游则跳过，已在调用则丢弃返回结果。
+message AiCancelRq {
+  string request_id = 1;
+}

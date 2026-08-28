@@ -35,6 +35,9 @@ object Protocol {
     const val TOKEN_REFRESH_RS  = DEF_BASE + 26
     const val LOGOUT_RQ         = DEF_BASE + 27
     const val LOGOUT_RS         = DEF_BASE + 28
+    const val AI_REPLY_RQ       = DEF_BASE + 29
+    const val AI_REPLY_RS       = DEF_BASE + 30
+    const val AI_CANCEL_RQ      = DEF_BASE + 31
 
 
     /** 单包最大长度（含 4B 协议号），防恶意超大包 OOM */

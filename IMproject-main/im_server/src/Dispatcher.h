@@ -9,6 +9,7 @@
 
 namespace imsrv {
 class AuthHandler;
+class AiHandler;
 class Database;
 class FriendHandler;
 class HttpFileServer;
@@ -30,6 +31,7 @@ public:
 
 private:
     std::unique_ptr<AuthHandler> m_auth;
+    std::unique_ptr<AiHandler> m_ai;
     std::unique_ptr<MessageHandler> m_message;
     std::unique_ptr<FriendHandler> m_friend;
     std::unique_ptr<RoamHandler> m_roam;

@@ -81,6 +81,31 @@ int main()
     assert(db.saveMessage(secondB, true));
     assert(secondB.seq == 2);
 
+    // 富媒体元数据必须完整落库并能经漫游查询恢复，否则 Android 历史图片无法下载/校验。
+    imsrv::StoredMessage image;
+    image.msgId = "media-metadata-1";
+    image.senderId = 10;
+    image.receiverId = 11;
+    image.type = 1;
+    image.mediaPath = "/tmp/media-metadata-1.png";
+    image.fileId = "file-media-metadata-1";
+    image.fileSize = 12345;
+    image.contentType = "image/png";
+    image.sha256 = "0123456789abcdef";
+    image.ts = 3;
+    assert(db.saveMessage(image, true));
+
+    const auto mediaRows = db.roamMessages(10, 11, INT64_MAX, 10);
+    assert(mediaRows.size() == 1);
+    assert(mediaRows.front().fileId == image.fileId);
+    assert(mediaRows.front().contentType == image.contentType);
+    assert(mediaRows.front().sha256 == image.sha256);
+
+    imsrv::StoredMessage fetchedMedia;
+    assert(db.getMessageByFileId(image.fileId, fetchedMedia));
+    assert(fetchedMedia.contentType == image.contentType);
+    assert(fetchedMedia.sha256 == image.sha256);
+
     //8线程并发测试
     constexpr int threadCount = 8;
     constexpr int messagesPerThread = 50;

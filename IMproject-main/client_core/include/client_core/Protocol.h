@@ -22,7 +22,7 @@ constexpr std::uint16_t TCP_PORT = 24563;
 
 // 协议类型基值与数量（函数指针数组边界，越界校验用）
 constexpr protType DEF_BASE = 1000;
-constexpr int DEF_PROT_COUNT = 30;
+constexpr int DEF_PROT_COUNT = 32;
 
 // 单个包体最大长度（字节），防止异常/恶意超大包导致 OOM/DoS
 // 含 4 字节协议号 + pb payload
@@ -55,6 +55,9 @@ constexpr protType DEF_PROT_TOKEN_REFRESH_RQ    = DEF_BASE + 25; // token刷新�
 constexpr protType DEF_PROT_TOKEN_REFRESH_RS    = DEF_BASE + 26; // token刷新响应
 constexpr protType DEF_PROT_LOGOUT_RQ           = DEF_BASE + 27; // 注销请求
 constexpr protType DEF_PROT_LOGOUT_RS           = DEF_BASE + 28; // 注销响应
+constexpr protType DEF_PROT_AI_REPLY_RQ         = DEF_BASE + 29; // AI候选回复请求
+constexpr protType DEF_PROT_AI_REPLY_RS         = DEF_BASE + 30; // AI候选回复响应
+constexpr protType DEF_PROT_AI_CANCEL_RQ        = DEF_BASE + 31; // 取消AI请求（尽力而为）
 
 // ---------------- 字段软上限（字节，UTF-8） ----------------
 // 与原定长 struct 语义一致；pb 字符串不再定长，由应用层截断保护

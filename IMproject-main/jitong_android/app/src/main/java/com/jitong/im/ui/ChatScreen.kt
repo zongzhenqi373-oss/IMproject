@@ -22,11 +22,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -53,6 +56,7 @@ import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -71,20 +75,39 @@ fun ChatScreen(vm: MainViewModel) {
     val peer by vm.chatPeer.collectAsStateWithLifecycle()
     val allMessages by vm.messages.collectAsStateWithLifecycle()
     val jumpTarget by vm.chatJumpTarget.collectAsStateWithLifecycle()
+    val aiReplyState by vm.aiReplyState.collectAsStateWithLifecycle()
     val p = peer ?: return
     val conv = allMessages[p.id].orEmpty()
+    // LazyColumn 使用反向数据 + reverseLayout，让最新消息天然锚定输入框上方。
+    // 键盘改变可视高度时从列表顶部收缩，不会把末条强制对齐到消息区顶部。
+    val displayMessages = conv.asReversed()
 
     val listState = rememberLazyListState()
+    val density = LocalDensity.current
+    val imeBottom = WindowInsets.ime.getBottom(density)
     // 仅当"最新一条"变化（新消息到底部）时才滚到底；上拉加载更早消息不改变末条 id，不触发滚动，
     // 避免把用户从顶部拽回底部（对齐漫游设计决策 7：简单版不做滚动锚点，允许轻微跳动）
     LaunchedEffect(conv.lastOrNull()?.msgId) {
-        if (conv.isNotEmpty()) listState.animateScrollToItem(conv.size - 1)
+        if (conv.isNotEmpty()) listState.animateScrollToItem(0)
     }
-    // 滚到顶部触发上拉加载更早历史（VM 内部按 hasMore/loading/游标防抖）
-    LaunchedEffect(listState, p.id) {
-        snapshotFlow { listState.firstVisibleItemIndex }
+    // 键盘弹出只会压缩 LazyColumn 的可视高度，不会改变消息数据；显式滚到底部，
+    // 确保最后一条消息连同输入区一起位于 IME 上方，而不是留在被裁剪的底部区域。
+    LaunchedEffect(imeBottom, p.id) {
+        if (imeBottom > 0 && conv.isNotEmpty()) {
+            listState.scrollToItem(0)
+        }
+    }
+    // reverseLayout 下，最早消息位于数据尾部；滚到物理顶部时最后一个反向索引可见。
+    LaunchedEffect(listState, p.id, displayMessages.size) {
+        snapshotFlow {
+            listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: 0
+        }
             .distinctUntilChanged()
-            .collect { idx -> if (idx == 0 && conv.isNotEmpty()) vm.loadMoreHistory(p.id) }
+            .collect { idx ->
+                if (displayMessages.isNotEmpty() && idx >= displayMessages.lastIndex) {
+                    vm.loadMoreHistory(p.id)
+                }
+            }
     }
 
     var input by rememberSaveable { mutableStateOf("") }
@@ -96,9 +119,9 @@ fun ChatScreen(vm: MainViewModel) {
 
     LaunchedEffect(jumpTarget, conv.size) {
         val msgId = jumpTarget ?: return@LaunchedEffect
-        val index = conv.indexOfFirst { it.msgId == msgId }
-        if (index >= 0) {
-            listState.animateScrollToItem(index)
+        val originalIndex = conv.indexOfFirst { it.msgId == msgId }
+        if (originalIndex >= 0) {
+            listState.animateScrollToItem(conv.lastIndex - originalIndex)
         } else {
             vm.notify("该消息尚未加载到当前聊天")
         }
@@ -190,6 +213,7 @@ fun ChatScreen(vm: MainViewModel) {
         ) {
             LazyColumn(
                 state = listState,
+                reverseLayout = true,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
@@ -197,8 +221,61 @@ fun ChatScreen(vm: MainViewModel) {
                 contentPadding = PaddingValues(top = 8.dp, bottom = 22.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(conv, key = { it.msgId }) { msg ->
+                items(displayMessages, key = { it.msgId }) { msg ->
                     MessageRow(msg, peerNick = p.nick, myNick = vm.myNick.collectAsStateWithLifecycle().value, myId = vm.myId, vm = vm)
+                }
+            }
+
+            when (val state = aiReplyState) {
+                AiReplyUiState.Idle -> Unit
+                is AiReplyUiState.Loading -> {
+                    Row(
+                        Modifier.fillMaxWidth().background(Color.White)
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Text("AI 正在分析最近的聊天…", modifier = Modifier.weight(1f), color = SecondaryText)
+                        TextButton(onClick = vm::cancelAiReply) { Text("取消") }
+                    }
+                }
+                is AiReplyUiState.Suggestions -> {
+                    Column(
+                        Modifier.fillMaxWidth().background(Color.White)
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(7.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("✦ AI 候选回复", color = JitongBlue, modifier = Modifier.weight(1f))
+                            TextButton(onClick = vm::dismissAiReplies) { Text("收起") }
+                        }
+                        state.items.forEach { suggestion ->
+                            Box(
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                                    .background(PaleBlue)
+                                    .clickable {
+                                        input = suggestion
+                                        vm.dismissAiReplies()
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 11.dp),
+                            ) { Text(suggestion, color = Color(0xFF1F2A44)) }
+                        }
+                        Text("点击候选内容只会填入输入框，不会自动发送", fontSize = 11.sp, color = SecondaryText)
+                    }
+                }
+                is AiReplyUiState.Error -> {
+                    Row(
+                        Modifier.fillMaxWidth().background(Color.White)
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(state.message, modifier = Modifier.weight(1f), color = Color(0xFFD93025))
+                        if (state.canRetry) {
+                            TextButton(onClick = vm::retryAiReply) { Text("重试") }
+                        }
+                        TextButton(onClick = vm::dismissAiReplies) { Text("关闭") }
+                    }
                 }
             }
 
@@ -209,6 +286,15 @@ fun ChatScreen(vm: MainViewModel) {
                     .padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                Box(
+                    Modifier
+                        .padding(end = 6.dp)
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(PaleBlue)
+                        .clickable { vm.requestAiReply() },
+                    contentAlignment = Alignment.Center,
+                ) { Text("AI", fontSize = 13.sp, color = JitongBlue) }
                 OutlinedTextField(
                     value = input,
                     onValueChange = { input = it },
@@ -339,26 +425,29 @@ private fun MessageRow(msg: ChatMessage, peerNick: String, myNick: String, myId:
 /**
  * 固定尺寸文件卡片：左侧文件图标，右侧文件名及大小/操作状态。
  *
- * 下载防重入：downloadFile 内部对 .part 文件用追加流写入，无二次点击去重逻辑，
- * 因此这里在 UI 层做守卫——仅当"未下载 且 非下载中（status != SENDING）"时才允许触发 onDownload，
- * 下载中（对方视角复用 SENDING 表示"进行中"）点击直接忽略，避免并发打开第二个追加流。
+ * 本机存在有效文件时直接打开；没有本地副本但存在服务端 fileId 时允许重新下载。
+ * 发送方在换设备、清缓存或原文件被删除后同样需要这条下载路径，不能只允许接收方下载。
  */
 @Composable
 private fun FileBubble(msg: ChatMessage, onDownload: () -> Unit, onOpen: () -> Unit, onRetry: () -> Unit) {
-    val downloaded = msg.localPath != null && !msg.localPath!!.endsWith(".part")
+    val downloaded = msg.localPath?.let { path ->
+        !path.endsWith(".part") &&
+            (path.startsWith("content://") || java.io.File(path).isFile)
+    } == true
     val downloading = msg.status == ChatMessage.Status.SENDING
     val failed = msg.fromMe && msg.status == ChatMessage.Status.FAILED
+    val canDownload = msg.fileId.isNotBlank()
     val progress = msg.transferred.coerceIn(0, 100)
     val actionText = when {
         downloading -> "传输中 $progress%"
         failed -> "点击重试"
         downloaded -> "点击打开"
-        !msg.fromMe -> "点击下载"
-        else -> "已发送"
+        canDownload -> "点击下载"
+        else -> "文件不可用"
     }
     val actionColor = when {
         failed -> Color(0xFFD93025)
-        downloaded || !msg.fromMe -> JitongBlue
+        downloaded || canDownload -> JitongBlue
         else -> Color.Gray
     }
 
@@ -371,8 +460,8 @@ private fun FileBubble(msg: ChatMessage, onDownload: () -> Unit, onOpen: () -> U
                 when {
                     failed -> onRetry()
                     downloaded -> onOpen()
-                    !msg.fromMe && !downloading -> onDownload()
-                    // 下载中或己方发送记录：忽略点击，防止重复下载/无意义交互
+                    canDownload && !downloading -> onDownload()
+                    // 上传/下载中或缺少服务端 fileId：忽略点击。
                 }
             }
             .padding(12.dp),

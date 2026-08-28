@@ -56,6 +56,8 @@ extern const ::google::protobuf::internal::DescriptorTable descriptor_table_im_2
 }  // extern "C"
 namespace im {
 namespace proto {
+enum AiReplyStatus : int;
+extern const uint32_t AiReplyStatus_internal_data_[];
 enum MsgType : int;
 extern const uint32_t MsgType_internal_data_[];
 class AddFriendRq;
@@ -73,6 +75,30 @@ extern AddFriendRsGlobalsTypeInternal AddFriendRs_globals_;
 extern const ::google::protobuf::internal::ClassDataFull AddFriendRs_class_data_;
 #else
 extern const AddFriendRsGlobalsTypeInternal AddFriendRs_globals_;
+#endif  // PROTOBUF_MESSAGE_GLOBALS
+class AiCancelRq;
+struct AiCancelRqGlobalsTypeInternal;
+#ifndef PROTOBUF_MESSAGE_GLOBALS
+extern AiCancelRqGlobalsTypeInternal AiCancelRq_globals_;
+extern const ::google::protobuf::internal::ClassDataFull AiCancelRq_class_data_;
+#else
+extern const AiCancelRqGlobalsTypeInternal AiCancelRq_globals_;
+#endif  // PROTOBUF_MESSAGE_GLOBALS
+class AiReplyRq;
+struct AiReplyRqGlobalsTypeInternal;
+#ifndef PROTOBUF_MESSAGE_GLOBALS
+extern AiReplyRqGlobalsTypeInternal AiReplyRq_globals_;
+extern const ::google::protobuf::internal::ClassDataFull AiReplyRq_class_data_;
+#else
+extern const AiReplyRqGlobalsTypeInternal AiReplyRq_globals_;
+#endif  // PROTOBUF_MESSAGE_GLOBALS
+class AiReplyRs;
+struct AiReplyRsGlobalsTypeInternal;
+#ifndef PROTOBUF_MESSAGE_GLOBALS
+extern AiReplyRsGlobalsTypeInternal AiReplyRs_globals_;
+extern const ::google::protobuf::internal::ClassDataFull AiReplyRs_class_data_;
+#else
+extern const AiReplyRsGlobalsTypeInternal AiReplyRs_globals_;
 #endif  // PROTOBUF_MESSAGE_GLOBALS
 class ChatInfoRq;
 struct ChatInfoRqGlobalsTypeInternal;
@@ -223,6 +249,9 @@ extern const TokenLoginRsGlobalsTypeInternal TokenLoginRs_globals_;
 namespace google {
 namespace protobuf {
 template <>
+internal::EnumTraitsT<::im::proto::AiReplyStatus_internal_data_>
+    internal::EnumTraitsImpl::value<::im::proto::AiReplyStatus>;
+template <>
 internal::EnumTraitsT<::im::proto::MsgType_internal_data_>
     internal::EnumTraitsImpl::value<::im::proto::MsgType>;
 }  // namespace protobuf
@@ -269,6 +298,52 @@ template <>
 [[nodiscard]] inline bool MsgType_Parse(
     ::absl::string_view name, MsgType* PROTOBUF_NONNULL value) {
   return ::google::protobuf::internal::ParseNamedEnum<MsgType>(MsgType_descriptor(), name,
+                                           value);
+}
+enum AiReplyStatus : int {
+  AI_REPLY_OK = 0,
+  AI_REPLY_INVALID_REQUEST = 1,
+  AI_REPLY_UNAUTHORIZED = 2,
+  AI_REPLY_NOT_FRIEND = 3,
+  AI_REPLY_RATE_LIMITED = 4,
+  AI_REPLY_BUSY = 5,
+  AI_REPLY_NOT_CONFIGURED = 6,
+  AI_REPLY_UPSTREAM_ERROR = 7,
+  AiReplyStatus_INT_MIN_SENTINEL_DO_NOT_USE_ =
+      ::std::numeric_limits<::int32_t>::min(),
+  AiReplyStatus_INT_MAX_SENTINEL_DO_NOT_USE_ =
+      ::std::numeric_limits<::int32_t>::max(),
+};
+
+extern const uint32_t AiReplyStatus_internal_data_[];
+inline constexpr AiReplyStatus AiReplyStatus_MIN =
+    static_cast<AiReplyStatus>(0);
+inline constexpr AiReplyStatus AiReplyStatus_MAX =
+    static_cast<AiReplyStatus>(7);
+[[nodiscard]] inline bool AiReplyStatus_IsValid(int value) {
+  return 0 <= value && value <= 7;
+}
+inline constexpr int AiReplyStatus_ARRAYSIZE = 7 + 1;
+[[nodiscard]] const ::google::protobuf::EnumDescriptor* PROTOBUF_NONNULL
+AiReplyStatus_descriptor();
+[[nodiscard]] inline auto ProtobufInternalGetEnumDescriptor(AiReplyStatus) {
+  return AiReplyStatus_descriptor();
+}
+template <typename T>
+[[nodiscard]] const ::std::string& AiReplyStatus_Name(T value) {
+  static_assert(::std::is_same<T, AiReplyStatus>::value ||
+                    ::std::is_integral<T>::value,
+                "Incorrect type passed to AiReplyStatus_Name().");
+  return AiReplyStatus_Name(static_cast<AiReplyStatus>(value));
+}
+template <>
+[[nodiscard]] inline const ::std::string& AiReplyStatus_Name(AiReplyStatus value) {
+  return ::google::protobuf::internal::NameOfDenseEnum<AiReplyStatus_descriptor, 0, 7>(
+      static_cast<int>(value));
+}
+[[nodiscard]] inline bool AiReplyStatus_Parse(
+    ::absl::string_view name, AiReplyStatus* PROTOBUF_NONNULL value) {
+  return ::google::protobuf::internal::ParseNamedEnum<AiReplyStatus>(AiReplyStatus_descriptor(), name,
                                            value);
 }
 using ::google::protobuf::internal::generated_enum::AbslParseFlag;
@@ -4231,6 +4306,759 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED ChatInfoRq final : public ::google:
     ::int64_t seq_;
     ::int64_t file_size_;
     ::int32_t image_height_;
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_im_2eproto;
+};
+// -------------------------------------------------------------------
+
+class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED AiReplyRs final : public ::google::protobuf::Message
+/* @@protoc_insertion_point(class_definition:im.proto.AiReplyRs) */ {
+ public:
+  inline AiReplyRs() : AiReplyRs(nullptr) {}
+  ~AiReplyRs() PROTOBUF_FINAL;
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  void operator delete(AiReplyRs* PROTOBUF_NONNULL msg, ::std::destroying_delete_t) {
+    SharedDtor(*msg);
+    ::google::protobuf::internal::SizedDelete(msg, sizeof(AiReplyRs));
+  }
+#endif
+
+  template <typename = void>
+  explicit constexpr AiReplyRs(::google::protobuf::internal::ConstantInitialized,
+                           const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL
+                               class_data);
+
+  inline AiReplyRs(const AiReplyRs& from) : AiReplyRs(nullptr, from) {}
+  inline AiReplyRs(AiReplyRs&& from) noexcept : AiReplyRs(nullptr, ::std::move(from)) {}
+  inline AiReplyRs& operator=(const AiReplyRs& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline AiReplyRs& operator=(AiReplyRs&& from) noexcept {
+    if (this == &from) return *this;
+    if (::google::protobuf::internal::CanMoveWithInternalSwap(GetArena(), from.GetArena())) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  [[nodiscard]] inline const ::google::protobuf::UnknownFieldSet& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance);
+  }
+  [[nodiscard]] inline ::google::protobuf::UnknownFieldSet* PROTOBUF_NONNULL
+  mutable_unknown_fields() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<::google::protobuf::UnknownFieldSet>();
+  }
+
+  [[nodiscard]] static const ::google::protobuf::Descriptor* PROTOBUF_NONNULL descriptor() {
+    return GetDescriptor();
+  }
+  [[nodiscard]] static const ::google::protobuf::Descriptor* PROTOBUF_NONNULL
+  GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  [[nodiscard]] static const ::google::protobuf::Reflection* PROTOBUF_NONNULL GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  [[nodiscard]] static const AiReplyRs& default_instance() {
+    return *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<AiReplyRs>(&AiReplyRs_globals_);
+  }
+  static constexpr int kIndexInFileMessages = 21;
+  friend void swap(AiReplyRs& a, AiReplyRs& b) { a.Swap(&b); }
+  inline void Swap(AiReplyRs* PROTOBUF_NONNULL other) {
+    if (other == this) return;
+    if (::google::protobuf::internal::CanUseInternalSwap(GetArena(), other->GetArena())) {
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(AiReplyRs* PROTOBUF_NONNULL other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  [[nodiscard]] AiReplyRs* PROTOBUF_NONNULL
+  New(::google::protobuf::Arena* PROTOBUF_NULLABLE arena = nullptr) const {
+    return ::google::protobuf::Message::DefaultConstruct<AiReplyRs>(arena);
+  }
+  using ::google::protobuf::Message::CopyFrom;
+  void CopyFrom(const AiReplyRs& from);
+  using ::google::protobuf::Message::MergeFrom;
+  void MergeFrom(const AiReplyRs& from) { AiReplyRs::MergeImpl(*this, from); }
+
+  private:
+  static void MergeImpl(::google::protobuf::MessageLite& to_msg,
+                        const ::google::protobuf::MessageLite& from_msg);
+
+  public:
+  [[nodiscard]] bool IsInitialized() const {
+    return true;
+  }
+  ABSL_ATTRIBUTE_REINITIALIZES void Clear() PROTOBUF_FINAL;
+  #if defined(PROTOBUF_CUSTOM_VTABLE)
+  private:
+  [[nodiscard]] static ::size_t ByteSizeLong(const ::google::protobuf::MessageLite& msg);
+  [[nodiscard]] static ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      const ::google::protobuf::MessageLite& msg, ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream);
+
+  public:
+  [[nodiscard]] ::size_t ByteSizeLong() const { return ByteSizeLong(*this); }
+  [[nodiscard]] ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const {
+    return _InternalSerialize(*this, target, stream);
+  }
+  #else   // PROTOBUF_CUSTOM_VTABLE
+  [[nodiscard]] ::size_t ByteSizeLong() const final;
+  [[nodiscard]] ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const final;
+  #endif  // PROTOBUF_CUSTOM_VTABLE
+  [[nodiscard]] int GetCachedSize() const {
+    return _impl_._cached_size_.Get();
+  }
+
+  private:
+  void SharedCtor(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static void SharedDtor(MessageLite& self);
+  void InternalSwap(AiReplyRs* PROTOBUF_NONNULL other);
+ private:
+  template <typename T>
+  friend ::absl::string_view(::google::protobuf::internal::GetAnyMessageName)();
+  static ::absl::string_view FullMessageName() { return "im.proto.AiReplyRs"; }
+
+  explicit AiReplyRs(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  AiReplyRs(::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const AiReplyRs& from);
+  AiReplyRs(
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, AiReplyRs&& from) noexcept
+      : AiReplyRs(arena) {
+    *this = ::std::move(from);
+  }
+  const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL GetClassData() const PROTOBUF_FINAL;
+  static void* PROTOBUF_NONNULL PlacementNew_(
+      const void* PROTOBUF_NONNULL, void* PROTOBUF_NONNULL mem,
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static constexpr auto InternalNewImpl_();
+
+ public:
+  static constexpr auto InternalGenerateClassData_(
+      const MessageLite& prototype,
+      const ::google::protobuf::internal::TcParseTableBase* PROTOBUF_NULLABLE tc_table = nullptr);
+
+  [[nodiscard]] ::google::protobuf::Metadata GetMetadata() const;
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+  enum : int {
+    kSuggestionsFieldNumber = 3,
+    kRequestIdFieldNumber = 1,
+    kErrorMessageFieldNumber = 4,
+    kStatusFieldNumber = 2,
+    kChunkIndexFieldNumber = 6,
+    kPartialFieldNumber = 5,
+    kDoneFieldNumber = 7,
+  };
+  // repeated string suggestions = 3;
+  [[nodiscard]] int suggestions_size()
+      const;
+  private:
+  int _internal_suggestions_size() const;
+
+  public:
+  void clear_suggestions() ;
+  [[nodiscard]] const ::std::string& suggestions(int index) const;
+  ::std::string* PROTOBUF_NONNULL mutable_suggestions(int index);
+  template <typename Arg_ = const ::std::string&, typename... Args_>
+  void set_suggestions(int index, Arg_&& value, Args_... args);
+  ::std::string* PROTOBUF_NONNULL add_suggestions();
+  template <typename Arg_ = const ::std::string&, typename... Args_>
+  void add_suggestions(Arg_&& value, Args_... args);
+  [[nodiscard]] const
+      ::google::protobuf::RepeatedPtrField<::std::string>&
+      suggestions() const;
+  [[nodiscard]] ::google::protobuf::RepeatedPtrField<::std::string>*
+      PROTOBUF_NONNULL
+      mutable_suggestions();
+
+  private:
+  const ::google::protobuf::RepeatedPtrField<::std::string>& _internal_suggestions() const;
+  ::google::protobuf::RepeatedPtrField<::std::string>* PROTOBUF_NONNULL _internal_mutable_suggestions();
+
+  public:
+  // string request_id = 1;
+  void clear_request_id() ;
+  [[nodiscard]] const ::std::string& request_id() const;
+  template <typename Arg_ = const ::std::string&, typename... Args_>
+  void set_request_id(Arg_&& arg, Args_... args);
+  ::std::string* PROTOBUF_NONNULL mutable_request_id();
+  [[nodiscard]] ::std::string* PROTOBUF_NULLABLE release_request_id();
+  void set_allocated_request_id(::std::string* PROTOBUF_NULLABLE value);
+
+  private:
+  const ::std::string& _internal_request_id() const;
+  PROTOBUF_ALWAYS_INLINE void _internal_set_request_id(const ::std::string& value);
+  ::std::string* PROTOBUF_NONNULL _internal_mutable_request_id();
+
+  public:
+  // string error_message = 4;
+  void clear_error_message() ;
+  [[nodiscard]] const ::std::string& error_message() const;
+  template <typename Arg_ = const ::std::string&, typename... Args_>
+  void set_error_message(Arg_&& arg, Args_... args);
+  ::std::string* PROTOBUF_NONNULL mutable_error_message();
+  [[nodiscard]] ::std::string* PROTOBUF_NULLABLE release_error_message();
+  void set_allocated_error_message(::std::string* PROTOBUF_NULLABLE value);
+
+  private:
+  const ::std::string& _internal_error_message() const;
+  PROTOBUF_ALWAYS_INLINE void _internal_set_error_message(const ::std::string& value);
+  ::std::string* PROTOBUF_NONNULL _internal_mutable_error_message();
+
+  public:
+  // .im.proto.AiReplyStatus status = 2;
+  void clear_status() ;
+  [[nodiscard]] ::im::proto::AiReplyStatus status() const;
+  void set_status(::im::proto::AiReplyStatus value);
+
+  private:
+  ::im::proto::AiReplyStatus _internal_status() const;
+  void _internal_set_status(::im::proto::AiReplyStatus value);
+
+  public:
+  // int32 chunk_index = 6;
+  void clear_chunk_index() ;
+  [[nodiscard]] ::int32_t chunk_index() const;
+  void set_chunk_index(::int32_t value);
+
+  private:
+  ::int32_t _internal_chunk_index() const;
+  void _internal_set_chunk_index(::int32_t value);
+
+  public:
+  // bool partial = 5;
+  void clear_partial() ;
+  [[nodiscard]] bool partial() const;
+  void set_partial(bool value);
+
+  private:
+  bool _internal_partial() const;
+  void _internal_set_partial(bool value);
+
+  public:
+  // bool done = 7;
+  void clear_done() ;
+  [[nodiscard]] bool done() const;
+  void set_done(bool value);
+
+  private:
+  bool _internal_done() const;
+  void _internal_set_done(bool value);
+
+  public:
+  // @@protoc_insertion_point(class_scope:im.proto.AiReplyRs)
+ private:
+  class _Internal;
+  using ParseTableT_ =
+      ::google::protobuf::internal::TcParseTable<3, 7,
+                          0, 61,
+                          2>;
+  static constexpr ParseTableT_ InternalGenerateParseTable_(
+      const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL class_data);
+  friend class ::google::protobuf::internal::TcParser;
+  #ifndef PROTOBUF_MESSAGE_GLOBALS
+  static const ParseTableT_ _table_;
+  #endif
+
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  friend ::google::protobuf::internal::PrivateAccess;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+    inline explicit constexpr Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                                    ::google::protobuf::internal::ConstantInitialized) noexcept;
+    inline explicit Impl_(
+        ::google::protobuf::internal::InternalVisibility visibility,
+        ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+    inline explicit Impl_(
+        ::google::protobuf::internal::InternalVisibility visibility,
+        ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const Impl_& from,
+        const AiReplyRs& from_msg);
+    ::google::protobuf::internal::HasBits<1> _has_bits_;
+    ::google::protobuf::internal::CachedSize _cached_size_;
+    ::google::protobuf::RepeatedPtrField<::std::string> suggestions_;
+    ::google::protobuf::internal::ArenaStringPtr request_id_;
+    ::google::protobuf::internal::ArenaStringPtr error_message_;
+    int status_;
+    ::int32_t chunk_index_;
+    bool partial_;
+    bool done_;
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_im_2eproto;
+};
+// -------------------------------------------------------------------
+
+class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED AiReplyRq final : public ::google::protobuf::Message
+/* @@protoc_insertion_point(class_definition:im.proto.AiReplyRq) */ {
+ public:
+  inline AiReplyRq() : AiReplyRq(nullptr) {}
+  ~AiReplyRq() PROTOBUF_FINAL;
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  void operator delete(AiReplyRq* PROTOBUF_NONNULL msg, ::std::destroying_delete_t) {
+    SharedDtor(*msg);
+    ::google::protobuf::internal::SizedDelete(msg, sizeof(AiReplyRq));
+  }
+#endif
+
+  template <typename = void>
+  explicit constexpr AiReplyRq(::google::protobuf::internal::ConstantInitialized,
+                           const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL
+                               class_data);
+
+  inline AiReplyRq(const AiReplyRq& from) : AiReplyRq(nullptr, from) {}
+  inline AiReplyRq(AiReplyRq&& from) noexcept : AiReplyRq(nullptr, ::std::move(from)) {}
+  inline AiReplyRq& operator=(const AiReplyRq& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline AiReplyRq& operator=(AiReplyRq&& from) noexcept {
+    if (this == &from) return *this;
+    if (::google::protobuf::internal::CanMoveWithInternalSwap(GetArena(), from.GetArena())) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  [[nodiscard]] inline const ::google::protobuf::UnknownFieldSet& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance);
+  }
+  [[nodiscard]] inline ::google::protobuf::UnknownFieldSet* PROTOBUF_NONNULL
+  mutable_unknown_fields() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<::google::protobuf::UnknownFieldSet>();
+  }
+
+  [[nodiscard]] static const ::google::protobuf::Descriptor* PROTOBUF_NONNULL descriptor() {
+    return GetDescriptor();
+  }
+  [[nodiscard]] static const ::google::protobuf::Descriptor* PROTOBUF_NONNULL
+  GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  [[nodiscard]] static const ::google::protobuf::Reflection* PROTOBUF_NONNULL GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  [[nodiscard]] static const AiReplyRq& default_instance() {
+    return *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<AiReplyRq>(&AiReplyRq_globals_);
+  }
+  static constexpr int kIndexInFileMessages = 20;
+  friend void swap(AiReplyRq& a, AiReplyRq& b) { a.Swap(&b); }
+  inline void Swap(AiReplyRq* PROTOBUF_NONNULL other) {
+    if (other == this) return;
+    if (::google::protobuf::internal::CanUseInternalSwap(GetArena(), other->GetArena())) {
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(AiReplyRq* PROTOBUF_NONNULL other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  [[nodiscard]] AiReplyRq* PROTOBUF_NONNULL
+  New(::google::protobuf::Arena* PROTOBUF_NULLABLE arena = nullptr) const {
+    return ::google::protobuf::Message::DefaultConstruct<AiReplyRq>(arena);
+  }
+  using ::google::protobuf::Message::CopyFrom;
+  void CopyFrom(const AiReplyRq& from);
+  using ::google::protobuf::Message::MergeFrom;
+  void MergeFrom(const AiReplyRq& from) { AiReplyRq::MergeImpl(*this, from); }
+
+  private:
+  static void MergeImpl(::google::protobuf::MessageLite& to_msg,
+                        const ::google::protobuf::MessageLite& from_msg);
+
+  public:
+  [[nodiscard]] bool IsInitialized() const {
+    return true;
+  }
+  ABSL_ATTRIBUTE_REINITIALIZES void Clear() PROTOBUF_FINAL;
+  #if defined(PROTOBUF_CUSTOM_VTABLE)
+  private:
+  [[nodiscard]] static ::size_t ByteSizeLong(const ::google::protobuf::MessageLite& msg);
+  [[nodiscard]] static ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      const ::google::protobuf::MessageLite& msg, ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream);
+
+  public:
+  [[nodiscard]] ::size_t ByteSizeLong() const { return ByteSizeLong(*this); }
+  [[nodiscard]] ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const {
+    return _InternalSerialize(*this, target, stream);
+  }
+  #else   // PROTOBUF_CUSTOM_VTABLE
+  [[nodiscard]] ::size_t ByteSizeLong() const final;
+  [[nodiscard]] ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const final;
+  #endif  // PROTOBUF_CUSTOM_VTABLE
+  [[nodiscard]] int GetCachedSize() const {
+    return _impl_._cached_size_.Get();
+  }
+
+  private:
+  void SharedCtor(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static void SharedDtor(MessageLite& self);
+  void InternalSwap(AiReplyRq* PROTOBUF_NONNULL other);
+ private:
+  template <typename T>
+  friend ::absl::string_view(::google::protobuf::internal::GetAnyMessageName)();
+  static ::absl::string_view FullMessageName() { return "im.proto.AiReplyRq"; }
+
+  explicit AiReplyRq(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  AiReplyRq(::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const AiReplyRq& from);
+  AiReplyRq(
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, AiReplyRq&& from) noexcept
+      : AiReplyRq(arena) {
+    *this = ::std::move(from);
+  }
+  const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL GetClassData() const PROTOBUF_FINAL;
+  static void* PROTOBUF_NONNULL PlacementNew_(
+      const void* PROTOBUF_NONNULL, void* PROTOBUF_NONNULL mem,
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static constexpr auto InternalNewImpl_();
+
+ public:
+  static constexpr auto InternalGenerateClassData_(
+      const MessageLite& prototype,
+      const ::google::protobuf::internal::TcParseTableBase* PROTOBUF_NULLABLE tc_table = nullptr);
+
+  [[nodiscard]] ::google::protobuf::Metadata GetMetadata() const;
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+  enum : int {
+    kRequestIdFieldNumber = 1,
+    kToneFieldNumber = 3,
+    kPeerIdFieldNumber = 2,
+    kMaxSuggestionsFieldNumber = 4,
+  };
+  // string request_id = 1;
+  void clear_request_id() ;
+  [[nodiscard]] const ::std::string& request_id() const;
+  template <typename Arg_ = const ::std::string&, typename... Args_>
+  void set_request_id(Arg_&& arg, Args_... args);
+  ::std::string* PROTOBUF_NONNULL mutable_request_id();
+  [[nodiscard]] ::std::string* PROTOBUF_NULLABLE release_request_id();
+  void set_allocated_request_id(::std::string* PROTOBUF_NULLABLE value);
+
+  private:
+  const ::std::string& _internal_request_id() const;
+  PROTOBUF_ALWAYS_INLINE void _internal_set_request_id(const ::std::string& value);
+  ::std::string* PROTOBUF_NONNULL _internal_mutable_request_id();
+
+  public:
+  // string tone = 3;
+  void clear_tone() ;
+  [[nodiscard]] const ::std::string& tone() const;
+  template <typename Arg_ = const ::std::string&, typename... Args_>
+  void set_tone(Arg_&& arg, Args_... args);
+  ::std::string* PROTOBUF_NONNULL mutable_tone();
+  [[nodiscard]] ::std::string* PROTOBUF_NULLABLE release_tone();
+  void set_allocated_tone(::std::string* PROTOBUF_NULLABLE value);
+
+  private:
+  const ::std::string& _internal_tone() const;
+  PROTOBUF_ALWAYS_INLINE void _internal_set_tone(const ::std::string& value);
+  ::std::string* PROTOBUF_NONNULL _internal_mutable_tone();
+
+  public:
+  // int32 peer_id = 2;
+  void clear_peer_id() ;
+  [[nodiscard]] ::int32_t peer_id() const;
+  void set_peer_id(::int32_t value);
+
+  private:
+  ::int32_t _internal_peer_id() const;
+  void _internal_set_peer_id(::int32_t value);
+
+  public:
+  // int32 max_suggestions = 4;
+  void clear_max_suggestions() ;
+  [[nodiscard]] ::int32_t max_suggestions() const;
+  void set_max_suggestions(::int32_t value);
+
+  private:
+  ::int32_t _internal_max_suggestions() const;
+  void _internal_set_max_suggestions(::int32_t value);
+
+  public:
+  // @@protoc_insertion_point(class_scope:im.proto.AiReplyRq)
+ private:
+  class _Internal;
+  using ParseTableT_ =
+      ::google::protobuf::internal::TcParseTable<2, 4,
+                          0, 41,
+                          2>;
+  static constexpr ParseTableT_ InternalGenerateParseTable_(
+      const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL class_data);
+  friend class ::google::protobuf::internal::TcParser;
+  #ifndef PROTOBUF_MESSAGE_GLOBALS
+  static const ParseTableT_ _table_;
+  #endif
+
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  friend ::google::protobuf::internal::PrivateAccess;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+    inline explicit constexpr Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                                    ::google::protobuf::internal::ConstantInitialized) noexcept;
+    inline explicit Impl_(
+        ::google::protobuf::internal::InternalVisibility visibility,
+        ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+    inline explicit Impl_(
+        ::google::protobuf::internal::InternalVisibility visibility,
+        ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const Impl_& from,
+        const AiReplyRq& from_msg);
+    ::google::protobuf::internal::HasBits<1> _has_bits_;
+    ::google::protobuf::internal::CachedSize _cached_size_;
+    ::google::protobuf::internal::ArenaStringPtr request_id_;
+    ::google::protobuf::internal::ArenaStringPtr tone_;
+    ::int32_t peer_id_;
+    ::int32_t max_suggestions_;
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_im_2eproto;
+};
+// -------------------------------------------------------------------
+
+class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED AiCancelRq final : public ::google::protobuf::Message
+/* @@protoc_insertion_point(class_definition:im.proto.AiCancelRq) */ {
+ public:
+  inline AiCancelRq() : AiCancelRq(nullptr) {}
+  ~AiCancelRq() PROTOBUF_FINAL;
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  void operator delete(AiCancelRq* PROTOBUF_NONNULL msg, ::std::destroying_delete_t) {
+    SharedDtor(*msg);
+    ::google::protobuf::internal::SizedDelete(msg, sizeof(AiCancelRq));
+  }
+#endif
+
+  template <typename = void>
+  explicit constexpr AiCancelRq(::google::protobuf::internal::ConstantInitialized,
+                           const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL
+                               class_data);
+
+  inline AiCancelRq(const AiCancelRq& from) : AiCancelRq(nullptr, from) {}
+  inline AiCancelRq(AiCancelRq&& from) noexcept : AiCancelRq(nullptr, ::std::move(from)) {}
+  inline AiCancelRq& operator=(const AiCancelRq& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline AiCancelRq& operator=(AiCancelRq&& from) noexcept {
+    if (this == &from) return *this;
+    if (::google::protobuf::internal::CanMoveWithInternalSwap(GetArena(), from.GetArena())) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  [[nodiscard]] inline const ::google::protobuf::UnknownFieldSet& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance);
+  }
+  [[nodiscard]] inline ::google::protobuf::UnknownFieldSet* PROTOBUF_NONNULL
+  mutable_unknown_fields() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<::google::protobuf::UnknownFieldSet>();
+  }
+
+  [[nodiscard]] static const ::google::protobuf::Descriptor* PROTOBUF_NONNULL descriptor() {
+    return GetDescriptor();
+  }
+  [[nodiscard]] static const ::google::protobuf::Descriptor* PROTOBUF_NONNULL
+  GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  [[nodiscard]] static const ::google::protobuf::Reflection* PROTOBUF_NONNULL GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  [[nodiscard]] static const AiCancelRq& default_instance() {
+    return *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<AiCancelRq>(&AiCancelRq_globals_);
+  }
+  static constexpr int kIndexInFileMessages = 22;
+  friend void swap(AiCancelRq& a, AiCancelRq& b) { a.Swap(&b); }
+  inline void Swap(AiCancelRq* PROTOBUF_NONNULL other) {
+    if (other == this) return;
+    if (::google::protobuf::internal::CanUseInternalSwap(GetArena(), other->GetArena())) {
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(AiCancelRq* PROTOBUF_NONNULL other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  [[nodiscard]] AiCancelRq* PROTOBUF_NONNULL
+  New(::google::protobuf::Arena* PROTOBUF_NULLABLE arena = nullptr) const {
+    return ::google::protobuf::Message::DefaultConstruct<AiCancelRq>(arena);
+  }
+  using ::google::protobuf::Message::CopyFrom;
+  void CopyFrom(const AiCancelRq& from);
+  using ::google::protobuf::Message::MergeFrom;
+  void MergeFrom(const AiCancelRq& from) { AiCancelRq::MergeImpl(*this, from); }
+
+  private:
+  static void MergeImpl(::google::protobuf::MessageLite& to_msg,
+                        const ::google::protobuf::MessageLite& from_msg);
+
+  public:
+  [[nodiscard]] bool IsInitialized() const {
+    return true;
+  }
+  ABSL_ATTRIBUTE_REINITIALIZES void Clear() PROTOBUF_FINAL;
+  #if defined(PROTOBUF_CUSTOM_VTABLE)
+  private:
+  [[nodiscard]] static ::size_t ByteSizeLong(const ::google::protobuf::MessageLite& msg);
+  [[nodiscard]] static ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      const ::google::protobuf::MessageLite& msg, ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream);
+
+  public:
+  [[nodiscard]] ::size_t ByteSizeLong() const { return ByteSizeLong(*this); }
+  [[nodiscard]] ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const {
+    return _InternalSerialize(*this, target, stream);
+  }
+  #else   // PROTOBUF_CUSTOM_VTABLE
+  [[nodiscard]] ::size_t ByteSizeLong() const final;
+  [[nodiscard]] ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const final;
+  #endif  // PROTOBUF_CUSTOM_VTABLE
+  [[nodiscard]] int GetCachedSize() const {
+    return _impl_._cached_size_.Get();
+  }
+
+  private:
+  void SharedCtor(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static void SharedDtor(MessageLite& self);
+  void InternalSwap(AiCancelRq* PROTOBUF_NONNULL other);
+ private:
+  template <typename T>
+  friend ::absl::string_view(::google::protobuf::internal::GetAnyMessageName)();
+  static ::absl::string_view FullMessageName() { return "im.proto.AiCancelRq"; }
+
+  explicit AiCancelRq(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  AiCancelRq(::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const AiCancelRq& from);
+  AiCancelRq(
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, AiCancelRq&& from) noexcept
+      : AiCancelRq(arena) {
+    *this = ::std::move(from);
+  }
+  const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL GetClassData() const PROTOBUF_FINAL;
+  static void* PROTOBUF_NONNULL PlacementNew_(
+      const void* PROTOBUF_NONNULL, void* PROTOBUF_NONNULL mem,
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static constexpr auto InternalNewImpl_();
+
+ public:
+  static constexpr auto InternalGenerateClassData_(
+      const MessageLite& prototype,
+      const ::google::protobuf::internal::TcParseTableBase* PROTOBUF_NULLABLE tc_table = nullptr);
+
+  [[nodiscard]] ::google::protobuf::Metadata GetMetadata() const;
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+  enum : int {
+    kRequestIdFieldNumber = 1,
+  };
+  // string request_id = 1;
+  void clear_request_id() ;
+  [[nodiscard]] const ::std::string& request_id() const;
+  template <typename Arg_ = const ::std::string&, typename... Args_>
+  void set_request_id(Arg_&& arg, Args_... args);
+  ::std::string* PROTOBUF_NONNULL mutable_request_id();
+  [[nodiscard]] ::std::string* PROTOBUF_NULLABLE release_request_id();
+  void set_allocated_request_id(::std::string* PROTOBUF_NULLABLE value);
+
+  private:
+  const ::std::string& _internal_request_id() const;
+  PROTOBUF_ALWAYS_INLINE void _internal_set_request_id(const ::std::string& value);
+  ::std::string* PROTOBUF_NONNULL _internal_mutable_request_id();
+
+  public:
+  // @@protoc_insertion_point(class_scope:im.proto.AiCancelRq)
+ private:
+  class _Internal;
+  using ParseTableT_ =
+      ::google::protobuf::internal::TcParseTable<0, 1,
+                          0, 38,
+                          2>;
+  static constexpr ParseTableT_ InternalGenerateParseTable_(
+      const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL class_data);
+  friend class ::google::protobuf::internal::TcParser;
+  #ifndef PROTOBUF_MESSAGE_GLOBALS
+  static const ParseTableT_ _table_;
+  #endif
+
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  friend ::google::protobuf::internal::PrivateAccess;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+    inline explicit constexpr Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                                    ::google::protobuf::internal::ConstantInitialized) noexcept;
+    inline explicit Impl_(
+        ::google::protobuf::internal::InternalVisibility visibility,
+        ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+    inline explicit Impl_(
+        ::google::protobuf::internal::InternalVisibility visibility,
+        ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const Impl_& from,
+        const AiCancelRq& from_msg);
+    ::google::protobuf::internal::HasBits<1> _has_bits_;
+    ::google::protobuf::internal::CachedSize _cached_size_;
+    ::google::protobuf::internal::ArenaStringPtr request_id_;
     PROTOBUF_TSAN_DECLARE_MEMBER
   };
   union { Impl_ _impl_; };
@@ -8617,6 +9445,554 @@ inline void RoamMsgRs::_internal_set_min_seq(::int64_t value) {
   _impl_.min_seq_ = value;
 }
 
+// -------------------------------------------------------------------
+
+// AiReplyRq
+
+// string request_id = 1;
+inline void AiReplyRq::clear_request_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.request_id_.ClearToEmpty();
+  ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+}
+inline const ::std::string& AiReplyRq::request_id() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:im.proto.AiReplyRq.request_id)
+  return _internal_request_id();
+}
+template <typename Arg_, typename... Args_>
+PROTOBUF_ALWAYS_INLINE void AiReplyRq::set_request_id(Arg_&& arg, Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  _impl_.request_id_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:im.proto.AiReplyRq.request_id)
+}
+inline ::std::string* PROTOBUF_NONNULL AiReplyRq::mutable_request_id()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  ::std::string* _s = _internal_mutable_request_id();
+  // @@protoc_insertion_point(field_mutable:im.proto.AiReplyRq.request_id)
+  return _s;
+}
+inline const ::std::string& AiReplyRq::_internal_request_id() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.request_id_.Get();
+}
+inline void AiReplyRq::_internal_set_request_id(const ::std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.request_id_.Set(value, GetArena());
+}
+inline ::std::string* PROTOBUF_NONNULL AiReplyRq::_internal_mutable_request_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.request_id_.Mutable( GetArena());
+}
+inline ::std::string* PROTOBUF_NULLABLE AiReplyRq::release_request_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:im.proto.AiReplyRq.request_id)
+  if (!CheckHasBit(_impl_._has_bits_[0], 0x00000001U)) {
+    return nullptr;
+  }
+  ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+  auto* released = _impl_.request_id_.Release();
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString()) {
+    _impl_.request_id_.Set("", GetArena());
+  }
+  return released;
+}
+inline void AiReplyRq::set_allocated_request_id(::std::string* PROTOBUF_NULLABLE value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  if (value != nullptr) {
+    SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  } else {
+    ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+  }
+  _impl_.request_id_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.request_id_.IsDefault()) {
+    _impl_.request_id_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:im.proto.AiReplyRq.request_id)
+}
+
+// int32 peer_id = 2;
+inline void AiReplyRq::clear_peer_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.peer_id_ = 0;
+  ClearHasBit(_impl_._has_bits_[0], 0x00000004U);
+}
+inline ::int32_t AiReplyRq::peer_id() const {
+  // @@protoc_insertion_point(field_get:im.proto.AiReplyRq.peer_id)
+  return _internal_peer_id();
+}
+inline void AiReplyRq::set_peer_id(::int32_t value) {
+  _internal_set_peer_id(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000004U);
+  // @@protoc_insertion_point(field_set:im.proto.AiReplyRq.peer_id)
+}
+inline ::int32_t AiReplyRq::_internal_peer_id() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.peer_id_;
+}
+inline void AiReplyRq::_internal_set_peer_id(::int32_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.peer_id_ = value;
+}
+
+// string tone = 3;
+inline void AiReplyRq::clear_tone() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.tone_.ClearToEmpty();
+  ClearHasBit(_impl_._has_bits_[0], 0x00000002U);
+}
+inline const ::std::string& AiReplyRq::tone() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:im.proto.AiReplyRq.tone)
+  return _internal_tone();
+}
+template <typename Arg_, typename... Args_>
+PROTOBUF_ALWAYS_INLINE void AiReplyRq::set_tone(Arg_&& arg, Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  _impl_.tone_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:im.proto.AiReplyRq.tone)
+}
+inline ::std::string* PROTOBUF_NONNULL AiReplyRq::mutable_tone()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  ::std::string* _s = _internal_mutable_tone();
+  // @@protoc_insertion_point(field_mutable:im.proto.AiReplyRq.tone)
+  return _s;
+}
+inline const ::std::string& AiReplyRq::_internal_tone() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.tone_.Get();
+}
+inline void AiReplyRq::_internal_set_tone(const ::std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.tone_.Set(value, GetArena());
+}
+inline ::std::string* PROTOBUF_NONNULL AiReplyRq::_internal_mutable_tone() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.tone_.Mutable( GetArena());
+}
+inline ::std::string* PROTOBUF_NULLABLE AiReplyRq::release_tone() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:im.proto.AiReplyRq.tone)
+  if (!CheckHasBit(_impl_._has_bits_[0], 0x00000002U)) {
+    return nullptr;
+  }
+  ClearHasBit(_impl_._has_bits_[0], 0x00000002U);
+  auto* released = _impl_.tone_.Release();
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString()) {
+    _impl_.tone_.Set("", GetArena());
+  }
+  return released;
+}
+inline void AiReplyRq::set_allocated_tone(::std::string* PROTOBUF_NULLABLE value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  if (value != nullptr) {
+    SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  } else {
+    ClearHasBit(_impl_._has_bits_[0], 0x00000002U);
+  }
+  _impl_.tone_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.tone_.IsDefault()) {
+    _impl_.tone_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:im.proto.AiReplyRq.tone)
+}
+
+// int32 max_suggestions = 4;
+inline void AiReplyRq::clear_max_suggestions() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.max_suggestions_ = 0;
+  ClearHasBit(_impl_._has_bits_[0], 0x00000008U);
+}
+inline ::int32_t AiReplyRq::max_suggestions() const {
+  // @@protoc_insertion_point(field_get:im.proto.AiReplyRq.max_suggestions)
+  return _internal_max_suggestions();
+}
+inline void AiReplyRq::set_max_suggestions(::int32_t value) {
+  _internal_set_max_suggestions(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000008U);
+  // @@protoc_insertion_point(field_set:im.proto.AiReplyRq.max_suggestions)
+}
+inline ::int32_t AiReplyRq::_internal_max_suggestions() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.max_suggestions_;
+}
+inline void AiReplyRq::_internal_set_max_suggestions(::int32_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.max_suggestions_ = value;
+}
+
+// -------------------------------------------------------------------
+
+// AiReplyRs
+
+// string request_id = 1;
+inline void AiReplyRs::clear_request_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.request_id_.ClearToEmpty();
+  ClearHasBit(_impl_._has_bits_[0], 0x00000002U);
+}
+inline const ::std::string& AiReplyRs::request_id() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:im.proto.AiReplyRs.request_id)
+  return _internal_request_id();
+}
+template <typename Arg_, typename... Args_>
+PROTOBUF_ALWAYS_INLINE void AiReplyRs::set_request_id(Arg_&& arg, Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  _impl_.request_id_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:im.proto.AiReplyRs.request_id)
+}
+inline ::std::string* PROTOBUF_NONNULL AiReplyRs::mutable_request_id()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  ::std::string* _s = _internal_mutable_request_id();
+  // @@protoc_insertion_point(field_mutable:im.proto.AiReplyRs.request_id)
+  return _s;
+}
+inline const ::std::string& AiReplyRs::_internal_request_id() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.request_id_.Get();
+}
+inline void AiReplyRs::_internal_set_request_id(const ::std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.request_id_.Set(value, GetArena());
+}
+inline ::std::string* PROTOBUF_NONNULL AiReplyRs::_internal_mutable_request_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.request_id_.Mutable( GetArena());
+}
+inline ::std::string* PROTOBUF_NULLABLE AiReplyRs::release_request_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:im.proto.AiReplyRs.request_id)
+  if (!CheckHasBit(_impl_._has_bits_[0], 0x00000002U)) {
+    return nullptr;
+  }
+  ClearHasBit(_impl_._has_bits_[0], 0x00000002U);
+  auto* released = _impl_.request_id_.Release();
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString()) {
+    _impl_.request_id_.Set("", GetArena());
+  }
+  return released;
+}
+inline void AiReplyRs::set_allocated_request_id(::std::string* PROTOBUF_NULLABLE value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  if (value != nullptr) {
+    SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  } else {
+    ClearHasBit(_impl_._has_bits_[0], 0x00000002U);
+  }
+  _impl_.request_id_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.request_id_.IsDefault()) {
+    _impl_.request_id_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:im.proto.AiReplyRs.request_id)
+}
+
+// .im.proto.AiReplyStatus status = 2;
+inline void AiReplyRs::clear_status() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.status_ = 0;
+  ClearHasBit(_impl_._has_bits_[0], 0x00000008U);
+}
+inline ::im::proto::AiReplyStatus AiReplyRs::status() const {
+  // @@protoc_insertion_point(field_get:im.proto.AiReplyRs.status)
+  return _internal_status();
+}
+inline void AiReplyRs::set_status(::im::proto::AiReplyStatus value) {
+  _internal_set_status(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000008U);
+  // @@protoc_insertion_point(field_set:im.proto.AiReplyRs.status)
+}
+inline ::im::proto::AiReplyStatus AiReplyRs::_internal_status() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return static_cast<::im::proto::AiReplyStatus>(_impl_.status_);
+}
+inline void AiReplyRs::_internal_set_status(::im::proto::AiReplyStatus value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.status_ = value;
+}
+
+// repeated string suggestions = 3;
+inline int AiReplyRs::_internal_suggestions_size() const {
+  return _internal_suggestions().size();
+}
+inline int AiReplyRs::suggestions_size() const {
+  return _internal_suggestions_size();
+}
+inline void AiReplyRs::clear_suggestions() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.suggestions_.Clear();
+  ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+}
+inline ::std::string* PROTOBUF_NONNULL AiReplyRs::add_suggestions()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  ::std::string* _s =
+      _internal_mutable_suggestions()->InternalAddWithArena(
+          ::google::protobuf::MessageLite::internal_visibility(), GetArena());
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  // @@protoc_insertion_point(field_add_mutable:im.proto.AiReplyRs.suggestions)
+  return _s;
+}
+inline const ::std::string& AiReplyRs::suggestions(int index) const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:im.proto.AiReplyRs.suggestions)
+  return _internal_suggestions().Get(index);
+}
+inline ::std::string* PROTOBUF_NONNULL AiReplyRs::mutable_suggestions(int index)
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_mutable:im.proto.AiReplyRs.suggestions)
+  return _internal_mutable_suggestions()->Mutable(index);
+}
+template <typename Arg_, typename... Args_>
+inline void AiReplyRs::set_suggestions(int index, Arg_&& value, Args_... args) {
+  ::google::protobuf::internal::AssignToString(
+      *_internal_mutable_suggestions()->Mutable(index),
+      ::std::forward<Arg_>(value), args... );
+  // @@protoc_insertion_point(field_set:im.proto.AiReplyRs.suggestions)
+}
+template <typename Arg_, typename... Args_>
+inline void AiReplyRs::add_suggestions(Arg_&& value, Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  ::google::protobuf::internal::AddToRepeatedPtrField(
+      ::google::protobuf::MessageLite::internal_visibility(), GetArena(),
+      *_internal_mutable_suggestions(), ::std::forward<Arg_>(value),
+      args... );
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  // @@protoc_insertion_point(field_add:im.proto.AiReplyRs.suggestions)
+}
+inline const ::google::protobuf::RepeatedPtrField<::std::string>& AiReplyRs::suggestions()
+    const ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_list:im.proto.AiReplyRs.suggestions)
+  return _internal_suggestions();
+}
+inline ::google::protobuf::RepeatedPtrField<::std::string>* PROTOBUF_NONNULL
+AiReplyRs::mutable_suggestions() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  // @@protoc_insertion_point(field_mutable_list:im.proto.AiReplyRs.suggestions)
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _internal_mutable_suggestions();
+}
+inline const ::google::protobuf::RepeatedPtrField<::std::string>&
+AiReplyRs::_internal_suggestions() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.suggestions_;
+}
+inline ::google::protobuf::RepeatedPtrField<::std::string>* PROTOBUF_NONNULL
+AiReplyRs::_internal_mutable_suggestions() {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return &_impl_.suggestions_;
+}
+
+// string error_message = 4;
+inline void AiReplyRs::clear_error_message() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.error_message_.ClearToEmpty();
+  ClearHasBit(_impl_._has_bits_[0], 0x00000004U);
+}
+inline const ::std::string& AiReplyRs::error_message() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:im.proto.AiReplyRs.error_message)
+  return _internal_error_message();
+}
+template <typename Arg_, typename... Args_>
+PROTOBUF_ALWAYS_INLINE void AiReplyRs::set_error_message(Arg_&& arg, Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  SetHasBit(_impl_._has_bits_[0], 0x00000004U);
+  _impl_.error_message_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:im.proto.AiReplyRs.error_message)
+}
+inline ::std::string* PROTOBUF_NONNULL AiReplyRs::mutable_error_message()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  SetHasBit(_impl_._has_bits_[0], 0x00000004U);
+  ::std::string* _s = _internal_mutable_error_message();
+  // @@protoc_insertion_point(field_mutable:im.proto.AiReplyRs.error_message)
+  return _s;
+}
+inline const ::std::string& AiReplyRs::_internal_error_message() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.error_message_.Get();
+}
+inline void AiReplyRs::_internal_set_error_message(const ::std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.error_message_.Set(value, GetArena());
+}
+inline ::std::string* PROTOBUF_NONNULL AiReplyRs::_internal_mutable_error_message() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.error_message_.Mutable( GetArena());
+}
+inline ::std::string* PROTOBUF_NULLABLE AiReplyRs::release_error_message() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:im.proto.AiReplyRs.error_message)
+  if (!CheckHasBit(_impl_._has_bits_[0], 0x00000004U)) {
+    return nullptr;
+  }
+  ClearHasBit(_impl_._has_bits_[0], 0x00000004U);
+  auto* released = _impl_.error_message_.Release();
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString()) {
+    _impl_.error_message_.Set("", GetArena());
+  }
+  return released;
+}
+inline void AiReplyRs::set_allocated_error_message(::std::string* PROTOBUF_NULLABLE value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  if (value != nullptr) {
+    SetHasBit(_impl_._has_bits_[0], 0x00000004U);
+  } else {
+    ClearHasBit(_impl_._has_bits_[0], 0x00000004U);
+  }
+  _impl_.error_message_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.error_message_.IsDefault()) {
+    _impl_.error_message_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:im.proto.AiReplyRs.error_message)
+}
+
+// bool partial = 5;
+inline void AiReplyRs::clear_partial() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.partial_ = false;
+  ClearHasBit(_impl_._has_bits_[0], 0x00000020U);
+}
+inline bool AiReplyRs::partial() const {
+  // @@protoc_insertion_point(field_get:im.proto.AiReplyRs.partial)
+  return _internal_partial();
+}
+inline void AiReplyRs::set_partial(bool value) {
+  _internal_set_partial(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000020U);
+  // @@protoc_insertion_point(field_set:im.proto.AiReplyRs.partial)
+}
+inline bool AiReplyRs::_internal_partial() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.partial_;
+}
+inline void AiReplyRs::_internal_set_partial(bool value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.partial_ = value;
+}
+
+// int32 chunk_index = 6;
+inline void AiReplyRs::clear_chunk_index() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.chunk_index_ = 0;
+  ClearHasBit(_impl_._has_bits_[0], 0x00000010U);
+}
+inline ::int32_t AiReplyRs::chunk_index() const {
+  // @@protoc_insertion_point(field_get:im.proto.AiReplyRs.chunk_index)
+  return _internal_chunk_index();
+}
+inline void AiReplyRs::set_chunk_index(::int32_t value) {
+  _internal_set_chunk_index(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000010U);
+  // @@protoc_insertion_point(field_set:im.proto.AiReplyRs.chunk_index)
+}
+inline ::int32_t AiReplyRs::_internal_chunk_index() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.chunk_index_;
+}
+inline void AiReplyRs::_internal_set_chunk_index(::int32_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.chunk_index_ = value;
+}
+
+// bool done = 7;
+inline void AiReplyRs::clear_done() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.done_ = false;
+  ClearHasBit(_impl_._has_bits_[0], 0x00000040U);
+}
+inline bool AiReplyRs::done() const {
+  // @@protoc_insertion_point(field_get:im.proto.AiReplyRs.done)
+  return _internal_done();
+}
+inline void AiReplyRs::set_done(bool value) {
+  _internal_set_done(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000040U);
+  // @@protoc_insertion_point(field_set:im.proto.AiReplyRs.done)
+}
+inline bool AiReplyRs::_internal_done() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.done_;
+}
+inline void AiReplyRs::_internal_set_done(bool value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.done_ = value;
+}
+
+// -------------------------------------------------------------------
+
+// AiCancelRq
+
+// string request_id = 1;
+inline void AiCancelRq::clear_request_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.request_id_.ClearToEmpty();
+  ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+}
+inline const ::std::string& AiCancelRq::request_id() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:im.proto.AiCancelRq.request_id)
+  return _internal_request_id();
+}
+template <typename Arg_, typename... Args_>
+PROTOBUF_ALWAYS_INLINE void AiCancelRq::set_request_id(Arg_&& arg, Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  _impl_.request_id_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:im.proto.AiCancelRq.request_id)
+}
+inline ::std::string* PROTOBUF_NONNULL AiCancelRq::mutable_request_id()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  ::std::string* _s = _internal_mutable_request_id();
+  // @@protoc_insertion_point(field_mutable:im.proto.AiCancelRq.request_id)
+  return _s;
+}
+inline const ::std::string& AiCancelRq::_internal_request_id() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.request_id_.Get();
+}
+inline void AiCancelRq::_internal_set_request_id(const ::std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.request_id_.Set(value, GetArena());
+}
+inline ::std::string* PROTOBUF_NONNULL AiCancelRq::_internal_mutable_request_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.request_id_.Mutable( GetArena());
+}
+inline ::std::string* PROTOBUF_NULLABLE AiCancelRq::release_request_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:im.proto.AiCancelRq.request_id)
+  if (!CheckHasBit(_impl_._has_bits_[0], 0x00000001U)) {
+    return nullptr;
+  }
+  ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+  auto* released = _impl_.request_id_.Release();
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString()) {
+    _impl_.request_id_.Set("", GetArena());
+  }
+  return released;
+}
+inline void AiCancelRq::set_allocated_request_id(::std::string* PROTOBUF_NULLABLE value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  if (value != nullptr) {
+    SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  } else {
+    ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+  }
+  _impl_.request_id_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.request_id_.IsDefault()) {
+    _impl_.request_id_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:im.proto.AiCancelRq.request_id)
+}
+
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
 #endif  // __GNUC__
@@ -8634,6 +10010,12 @@ struct is_proto_enum<::im::proto::MsgType> : std::true_type {};
 template <>
 inline const EnumDescriptor* PROTOBUF_NONNULL GetEnumDescriptor<::im::proto::MsgType>() {
   return ::im::proto::MsgType_descriptor();
+}
+template <>
+struct is_proto_enum<::im::proto::AiReplyStatus> : std::true_type {};
+template <>
+inline const EnumDescriptor* PROTOBUF_NONNULL GetEnumDescriptor<::im::proto::AiReplyStatus>() {
+  return ::im::proto::AiReplyStatus_descriptor();
 }
 
 }  // namespace protobuf

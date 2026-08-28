@@ -34,6 +34,16 @@ class ImClient {
         data class TokenRefreshResult(val result: Int, val tokenSession: TokenSession?) : Event
         data class LogoutResult(val result: Int) : Event
 
+        data class AiReplyResult(
+            val requestId: String,
+            val status: Im.AiReplyStatus,
+            val suggestions: List<String>,
+            val errorMessage: String,
+            val partial: Boolean,
+            val chunkIndex: Int,
+            val done: Boolean,
+        ) : Event
+
         /** 本人资料（userId == myId）或好友资料/上下线状态刷新 */
         data class UserOrFriendInfo(
             val userId: Int,
@@ -312,6 +322,28 @@ class ImClient {
         send(Protocol.ROAM_MSG_RQ, rq.toByteArray())
     }
 
+    /** 请求服务端基于当前单聊最近消息生成候选回复；聊天正文由服务端从数据库读取。 */
+    suspend fun requestAiReply(
+        peerId: Int,
+        requestId: String,
+        tone: String = "自然、简洁",
+        maxSuggestions: Int = 3,
+    ) {
+        val request = Im.AiReplyRq.newBuilder()
+            .setRequestId(requestId)
+            .setPeerId(peerId)
+            .setTone(tone)
+            .setMaxSuggestions(maxSuggestions.coerceIn(1, 3))
+            .build()
+        send(Protocol.AI_REPLY_RQ, request.toByteArray())
+    }
+
+    /** 尽力取消：服务端尚未调用模型时跳过；调用进行中时丢弃响应。 */
+    suspend fun cancelAiReply(requestId: String) {
+        val request = Im.AiCancelRq.newBuilder().setRequestId(requestId).build()
+        send(Protocol.AI_CANCEL_RQ, request.toByteArray())
+    }
+
     /** 主动下线：通知服务端（其会广播好友）后关闭连接 */
     suspend fun logout() {
         if (connected && myId > 0) {
@@ -398,6 +430,21 @@ class ImClient {
 
             Protocol.LOGOUT_RS ->
                 _events.emit(Event.LogoutResult(Im.LogoutRs.parseFrom(f.payload).result))
+
+            Protocol.AI_REPLY_RS -> {
+                val response = Im.AiReplyRs.parseFrom(f.payload)
+                _events.emit(
+                    Event.AiReplyResult(
+                        response.requestId,
+                        response.status,
+                        response.suggestionsList,
+                        response.errorMessage,
+                        response.partial,
+                        response.chunkIndex,
+                        response.done,
+                    )
+                )
+            }
 
             Protocol.FRIEND_INFO -> {
                 val info = Im.FriendInfo.parseFrom(f.payload)

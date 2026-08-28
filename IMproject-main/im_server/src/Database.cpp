@@ -202,7 +202,9 @@ bool Database::open(const std::string& dbPath, int poolSize)
         "  is_read INTEGER NOT NULL DEFAULT 0,"
         "  seq INTEGER NOT NULL DEFAULT 0,"
         "  file_id TEXT,"
-        "  file_size INTEGER NOT NULL DEFAULT 0"
+        "  file_size INTEGER NOT NULL DEFAULT 0,"
+        "  content_type TEXT NOT NULL DEFAULT '',"
+        "  sha256 TEXT NOT NULL DEFAULT ''"
         ");"
         // 漫游索引（roamMessages）
         "CREATE INDEX IF NOT EXISTS idx_msg_conv_ts ON messages(conversation_id, ts);"
@@ -248,6 +250,8 @@ bool Database::open(const std::string& dbPath, int poolSize)
     if (!schemaOk) return false;
     // 兼容旧数据库；重复执行时 duplicate column 错误可安全忽略。
     execOn(c.db, "ALTER TABLE t_user ADD COLUMN password_algo TEXT NOT NULL DEFAULT 'legacy_sha256';");
+    execOn(c.db, "ALTER TABLE messages ADD COLUMN content_type TEXT NOT NULL DEFAULT '';");
+    execOn(c.db, "ALTER TABLE messages ADD COLUMN sha256 TEXT NOT NULL DEFAULT '';");
     // 清理旧版重复/不匹配索引。离线消息跨会话按服务端时间+行号稳定排序，
     // 因此索引也按 receiver/is_delivered/ts/id 排列。
     execOn(c.db, "DROP INDEX IF EXISTS idx_msg_conv_seq;");
@@ -606,8 +610,8 @@ bool Database::saveMessage(StoredMessage& m, bool delivered)
         // msg_id UNIQUE 保证幂等；会话 seq 唯一索引是并发顺序的数据库级最后防线。
         if(sqlite3_prepare_v2(db,
             "INSERT INTO messages"
-            "(msg_id, conversation_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, is_delivered, is_read, seq, file_id, file_size)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?,?,?);",
+            "(msg_id, conversation_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, is_delivered, is_read, seq, file_id, file_size, content_type, sha256)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?);",
             -1, &st, nullptr) != SQLITE_OK){
                 rollback();
                 return false;
@@ -626,6 +630,8 @@ bool Database::saveMessage(StoredMessage& m, bool delivered)
         sqlite3_bind_int64(st, 12, m.seq);
         sqlite3_bind_text(st, 13, m.fileId.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_int64(st, 14, m.fileSize);
+        sqlite3_bind_text(st, 15, m.contentType.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(st, 16, m.sha256.c_str(), -1, SQLITE_TRANSIENT);
         const bool ok = sqlite3_step(st) == SQLITE_DONE;
         sqlite3_finalize(st);
         if (!ok) { rollback(); return false; }
@@ -642,7 +648,7 @@ std::vector<StoredMessage> Database::pullUndelivered(int receiverId)
 
     sqlite3_stmt* st = nullptr;
     if(sqlite3_prepare_v2(c.db,
-        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq, file_id, file_size "
+        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq, file_id, file_size, content_type, sha256 "
         "FROM messages WHERE receiver_id=? AND is_delivered=0 ORDER BY ts ASC, id ASC;",
         -1, &st, nullptr) != SQLITE_OK){
         return out;
@@ -666,6 +672,10 @@ std::vector<StoredMessage> Database::pullUndelivered(int receiverId)
         const unsigned char* fileId = sqlite3_column_text(st, 10);
         m.fileId = fileId ? reinterpret_cast<const char*>(fileId) : "";
         m.fileSize = sqlite3_column_int64(st, 11);
+        const unsigned char* contentType = sqlite3_column_text(st, 12);
+        const unsigned char* sha256 = sqlite3_column_text(st, 13);
+        m.contentType = contentType ? reinterpret_cast<const char*>(contentType) : "";
+        m.sha256 = sha256 ? reinterpret_cast<const char*>(sha256) : "";
         out.push_back(std::move(m));
     }
     sqlite3_finalize(st);
@@ -688,7 +698,8 @@ void Database::markDelivered(const std::vector<std::string>& msgIds)
 }
 
 // 从结果集当前行装载一条 StoredMessage（列序须与 SELECT 一致：
-// msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq, file_id, file_size）
+// msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq,
+// file_id, file_size, content_type, sha256）
 static StoredMessage readMessageRow(sqlite3_stmt* st)
 {
     StoredMessage m;
@@ -708,6 +719,10 @@ static StoredMessage readMessageRow(sqlite3_stmt* st)
     const unsigned char* fileId = sqlite3_column_text(st, 10);
     m.fileId = fileId ? reinterpret_cast<const char*>(fileId) : "";
     m.fileSize = sqlite3_column_int64(st, 11);
+    const unsigned char* contentType = sqlite3_column_text(st, 12);
+    const unsigned char* sha256 = sqlite3_column_text(st, 13);
+    m.contentType = contentType ? reinterpret_cast<const char*>(contentType) : "";
+    m.sha256 = sha256 ? reinterpret_cast<const char*>(sha256) : "";
     return m;
 }
 
@@ -722,7 +737,7 @@ std::vector<StoredMessage> Database::roamConversations(int userId)
     sqlite3_stmt* st = nullptr;
     if(sqlite3_prepare_v2(c.db,
         "SELECT m.msg_id, m.sender_id, m.receiver_id, m.type, m.content, m.media_path, "
-        "m.img_w, m.img_h, m.ts, m.seq, m.file_id, m.file_size FROM messages m JOIN ("
+        "m.img_w, m.img_h, m.ts, m.seq, m.file_id, m.file_size, m.content_type, m.sha256 FROM messages m JOIN ("
         "  SELECT conversation_id, MAX(id) AS mid FROM ("
         "    SELECT conversation_id, id FROM messages WHERE sender_id=?"
         "    UNION ALL"
@@ -748,7 +763,7 @@ std::vector<StoredMessage> Database::roamMessages(int userId, int peerId, std::i
     // 会话内比游标更早的 N 条（seq 倒序），走 idx_msg_conv_seq
     sqlite3_stmt* st = nullptr;
     if(sqlite3_prepare_v2(c.db,
-        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq, file_id, file_size "
+        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq, file_id, file_size, content_type, sha256 "
         "FROM messages WHERE conversation_id=? AND seq < ? ORDER BY seq DESC LIMIT ?;",
         -1, &st, nullptr) != SQLITE_OK) return out;
     sqlite3_bind_int64(st, 1, convId);
@@ -765,7 +780,7 @@ bool Database::getMessageByMsgId(const std::string& msgId, StoredMessage& out)
     std::lock_guard<std::mutex> lock(c.mtx);
     sqlite3_stmt* st = nullptr;
     if(sqlite3_prepare_v2(c.db,
-        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq, file_id, file_size "
+        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq, file_id, file_size, content_type, sha256 "
         "FROM messages WHERE msg_id=?;",
         -1, &st, nullptr) != SQLITE_OK) return false;
     sqlite3_bind_text(st, 1, msgId.c_str(), -1, SQLITE_TRANSIENT);
@@ -787,6 +802,10 @@ bool Database::getMessageByMsgId(const std::string& msgId, StoredMessage& out)
         const unsigned char* fid = sqlite3_column_text(st, 10);
         out.fileId = fid ? reinterpret_cast<const char*>(fid) : "";
         out.fileSize = sqlite3_column_int64(st, 11);
+        const unsigned char* contentType = sqlite3_column_text(st, 12);
+        const unsigned char* sha256 = sqlite3_column_text(st, 13);
+        out.contentType = contentType ? reinterpret_cast<const char*>(contentType) : "";
+        out.sha256 = sha256 ? reinterpret_cast<const char*>(sha256) : "";
         ok = true;
     }
     sqlite3_finalize(st);
@@ -798,7 +817,7 @@ bool Database::getMessageByFileId(const std::string& fileId, StoredMessage& out)
     std::lock_guard<std::mutex> lock(c.mtx);
     sqlite3_stmt* st = nullptr;
     if(sqlite3_prepare_v2(c.db,
-        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq, file_id, file_size "
+        "SELECT msg_id, sender_id, receiver_id, type, content, media_path, img_w, img_h, ts, seq, file_id, file_size, content_type, sha256 "
         "FROM messages WHERE file_id=?;",
         -1, &st, nullptr) != SQLITE_OK) return false;
     sqlite3_bind_text(st, 1, fileId.c_str(), -1, SQLITE_TRANSIENT);
@@ -821,6 +840,10 @@ bool Database::getMessageByFileId(const std::string& fileId, StoredMessage& out)
         const unsigned char* fid = sqlite3_column_text(st, 10);
         out.fileId = fid ? reinterpret_cast<const char*>(fid) : "";
         out.fileSize = sqlite3_column_int64(st, 11);
+        const unsigned char* contentType = sqlite3_column_text(st, 12);
+        const unsigned char* sha256 = sqlite3_column_text(st, 13);
+        out.contentType = contentType ? reinterpret_cast<const char*>(contentType) : "";
+        out.sha256 = sha256 ? reinterpret_cast<const char*>(sha256) : "";
         ok = true;
     }
     sqlite3_finalize(st);
