@@ -143,6 +143,33 @@ message AddFriendRs {
   string mynick = 5;    // UTF-8
 }
 
+// “新的朋友”列表：同时包含别人发给我的、以及我发出但尚未处理的申请。
+message FriendRequestListRq {}
+
+message FriendRequestItem {
+  int32 requester_id = 1;
+  int32 target_id = 2;
+  string requester_nick = 3;
+  string target_nick = 4;
+  int64 created_at = 5;
+}
+
+message FriendRequestListRs {
+  repeated FriendRequestItem requests = 1;
+}
+
+// ---------------- 删除好友 ----------------
+message DeleteFriendRq {
+  int32 friend_id = 1; // 只传目标好友；操作者身份以服务端登录 Session 为准
+}
+
+message DeleteFriendRs {
+  int32 result = 1;
+  int32 friend_id = 2; // 当前客户端应从好友列表移除的用户 id
+}
+
+
+
 // ---------------- 下线通知 ----------------
 // C→S：告知自己下线；S→C：转发给在线好友
 message FriendOffline {

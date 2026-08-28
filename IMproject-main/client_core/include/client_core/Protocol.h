@@ -22,7 +22,7 @@ constexpr std::uint16_t TCP_PORT = 24563;
 
 // 协议类型基值与数量（函数指针数组边界，越界校验用）
 constexpr protType DEF_BASE = 1000;
-constexpr int DEF_PROT_COUNT = 32;
+constexpr int DEF_PROT_COUNT = 36;
 
 // 单个包体最大长度（字节），防止异常/恶意超大包导致 OOM/DoS
 // 含 4 字节协议号 + pb payload
@@ -58,6 +58,10 @@ constexpr protType DEF_PROT_LOGOUT_RS           = DEF_BASE + 28; // 注销响应
 constexpr protType DEF_PROT_AI_REPLY_RQ         = DEF_BASE + 29; // AI候选回复请求
 constexpr protType DEF_PROT_AI_REPLY_RS         = DEF_BASE + 30; // AI候选回复响应
 constexpr protType DEF_PROT_AI_CANCEL_RQ        = DEF_BASE + 31; // 取消AI请求（尽力而为）
+constexpr protType DEF_PROT_DELETE_FRIEND_RQ    = DEF_BASE + 32; // 删除好友请求
+constexpr protType DEF_PROT_DELETE_FRIEND_RS    = DEF_BASE + 33; // 删除好友响应
+constexpr protType DEF_PROT_FRIEND_REQUEST_LIST_RQ = DEF_BASE + 34;
+constexpr protType DEF_PROT_FRIEND_REQUEST_LIST_RS = DEF_BASE + 35;
 
 // ---------------- 字段软上限（字节，UTF-8） ----------------
 // 与原定长 struct 语义一致；pb 字符串不再定长，由应用层截断保护
@@ -91,6 +95,13 @@ constexpr int ADD_FRIEND_OFFLINE = 2;
 constexpr int ADD_FRIEND_NOTEXIT = 3;
 constexpr int ADD_FRIEND_SELF = 4;
 constexpr int ADD_FRIEND_ALREADY = 5;
+constexpr int ADD_FRIEND_PENDING = 6;
+constexpr int ADD_FRIEND_DB_ERROR = 7;
+
+constexpr int DELETE_FRIEND_SUCCESS = 0;
+constexpr int DELETE_FRIEND_DB_ERROR = 1;
+constexpr int DELETE_FRIEND_NOT_FRIEND = 2;
+constexpr int DELETE_FRIEND_INVALID = 3;
 
 // 文件传输：分片协议已废弃（迁移到 HTTP 文件服务），仅保留通用媒体大小上限，
 // 供 HttpFileServer 的上传端点和 client_core 的上传封装共用同一个软上限。

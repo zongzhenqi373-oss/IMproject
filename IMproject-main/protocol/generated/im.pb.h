@@ -116,6 +116,22 @@ extern const ::google::protobuf::internal::ClassDataFull ChatInfoRs_class_data_;
 #else
 extern const ChatInfoRsGlobalsTypeInternal ChatInfoRs_globals_;
 #endif  // PROTOBUF_MESSAGE_GLOBALS
+class DeleteFriendRq;
+struct DeleteFriendRqGlobalsTypeInternal;
+#ifndef PROTOBUF_MESSAGE_GLOBALS
+extern DeleteFriendRqGlobalsTypeInternal DeleteFriendRq_globals_;
+extern const ::google::protobuf::internal::ClassDataFull DeleteFriendRq_class_data_;
+#else
+extern const DeleteFriendRqGlobalsTypeInternal DeleteFriendRq_globals_;
+#endif  // PROTOBUF_MESSAGE_GLOBALS
+class DeleteFriendRs;
+struct DeleteFriendRsGlobalsTypeInternal;
+#ifndef PROTOBUF_MESSAGE_GLOBALS
+extern DeleteFriendRsGlobalsTypeInternal DeleteFriendRs_globals_;
+extern const ::google::protobuf::internal::ClassDataFull DeleteFriendRs_class_data_;
+#else
+extern const DeleteFriendRsGlobalsTypeInternal DeleteFriendRs_globals_;
+#endif  // PROTOBUF_MESSAGE_GLOBALS
 class FriendInfo;
 struct FriendInfoGlobalsTypeInternal;
 #ifndef PROTOBUF_MESSAGE_GLOBALS
@@ -875,7 +891,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED RoamMsgRq final : public ::google::
   [[nodiscard]] static const RoamMsgRq& default_instance() {
     return *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<RoamMsgRq>(&RoamMsgRq_globals_);
   }
-  static constexpr int kIndexInFileMessages = 18;
+  static constexpr int kIndexInFileMessages = 20;
   friend void swap(RoamMsgRq& a, RoamMsgRq& b) { a.Swap(&b); }
   inline void Swap(RoamMsgRq* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -1112,7 +1128,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED RoamConvRq final : public ::google:
   [[nodiscard]] static const RoamConvRq& default_instance() {
     return *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<RoamConvRq>(&RoamConvRq_globals_);
   }
-  static constexpr int kIndexInFileMessages = 16;
+  static constexpr int kIndexInFileMessages = 18;
   friend void swap(RoamConvRq& a, RoamConvRq& b) { a.Swap(&b); }
   inline void Swap(RoamConvRq* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -3268,7 +3284,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED FriendOffline final : public ::goog
   [[nodiscard]] static const FriendOffline& default_instance() {
     return *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<FriendOffline>(&FriendOffline_globals_);
   }
-  static constexpr int kIndexInFileMessages = 15;
+  static constexpr int kIndexInFileMessages = 17;
   friend void swap(FriendOffline& a, FriendOffline& b) { a.Swap(&b); }
   inline void Swap(FriendOffline* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -3665,6 +3681,478 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED FriendInfo final : public ::google:
     ::int32_t userid_;
     ::int32_t iconid_;
     ::int32_t status_;
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_im_2eproto;
+};
+// -------------------------------------------------------------------
+
+class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED DeleteFriendRs final : public ::google::protobuf::Message
+/* @@protoc_insertion_point(class_definition:im.proto.DeleteFriendRs) */ {
+ public:
+  inline DeleteFriendRs() : DeleteFriendRs(nullptr) {}
+  ~DeleteFriendRs() PROTOBUF_FINAL;
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  void operator delete(DeleteFriendRs* PROTOBUF_NONNULL msg, ::std::destroying_delete_t) {
+    SharedDtor(*msg);
+    ::google::protobuf::internal::SizedDelete(msg, sizeof(DeleteFriendRs));
+  }
+#endif
+
+  template <typename = void>
+  explicit constexpr DeleteFriendRs(::google::protobuf::internal::ConstantInitialized,
+                           const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL
+                               class_data);
+
+  inline DeleteFriendRs(const DeleteFriendRs& from) : DeleteFriendRs(nullptr, from) {}
+  inline DeleteFriendRs(DeleteFriendRs&& from) noexcept : DeleteFriendRs(nullptr, ::std::move(from)) {}
+  inline DeleteFriendRs& operator=(const DeleteFriendRs& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline DeleteFriendRs& operator=(DeleteFriendRs&& from) noexcept {
+    if (this == &from) return *this;
+    if (::google::protobuf::internal::CanMoveWithInternalSwap(GetArena(), from.GetArena())) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  [[nodiscard]] inline const ::google::protobuf::UnknownFieldSet& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance);
+  }
+  [[nodiscard]] inline ::google::protobuf::UnknownFieldSet* PROTOBUF_NONNULL
+  mutable_unknown_fields() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<::google::protobuf::UnknownFieldSet>();
+  }
+
+  [[nodiscard]] static const ::google::protobuf::Descriptor* PROTOBUF_NONNULL descriptor() {
+    return GetDescriptor();
+  }
+  [[nodiscard]] static const ::google::protobuf::Descriptor* PROTOBUF_NONNULL
+  GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  [[nodiscard]] static const ::google::protobuf::Reflection* PROTOBUF_NONNULL GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  [[nodiscard]] static const DeleteFriendRs& default_instance() {
+    return *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<DeleteFriendRs>(&DeleteFriendRs_globals_);
+  }
+  static constexpr int kIndexInFileMessages = 16;
+  friend void swap(DeleteFriendRs& a, DeleteFriendRs& b) { a.Swap(&b); }
+  inline void Swap(DeleteFriendRs* PROTOBUF_NONNULL other) {
+    if (other == this) return;
+    if (::google::protobuf::internal::CanUseInternalSwap(GetArena(), other->GetArena())) {
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(DeleteFriendRs* PROTOBUF_NONNULL other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  [[nodiscard]] DeleteFriendRs* PROTOBUF_NONNULL
+  New(::google::protobuf::Arena* PROTOBUF_NULLABLE arena = nullptr) const {
+    return ::google::protobuf::Message::DefaultConstruct<DeleteFriendRs>(arena);
+  }
+  using ::google::protobuf::Message::CopyFrom;
+  void CopyFrom(const DeleteFriendRs& from);
+  using ::google::protobuf::Message::MergeFrom;
+  void MergeFrom(const DeleteFriendRs& from) { DeleteFriendRs::MergeImpl(*this, from); }
+
+  private:
+  static void MergeImpl(::google::protobuf::MessageLite& to_msg,
+                        const ::google::protobuf::MessageLite& from_msg);
+
+  public:
+  [[nodiscard]] bool IsInitialized() const {
+    return true;
+  }
+  ABSL_ATTRIBUTE_REINITIALIZES void Clear() PROTOBUF_FINAL;
+  #if defined(PROTOBUF_CUSTOM_VTABLE)
+  private:
+  [[nodiscard]] static ::size_t ByteSizeLong(const ::google::protobuf::MessageLite& msg);
+  [[nodiscard]] static ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      const ::google::protobuf::MessageLite& msg, ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream);
+
+  public:
+  [[nodiscard]] ::size_t ByteSizeLong() const { return ByteSizeLong(*this); }
+  [[nodiscard]] ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const {
+    return _InternalSerialize(*this, target, stream);
+  }
+  #else   // PROTOBUF_CUSTOM_VTABLE
+  [[nodiscard]] ::size_t ByteSizeLong() const final;
+  [[nodiscard]] ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const final;
+  #endif  // PROTOBUF_CUSTOM_VTABLE
+  [[nodiscard]] int GetCachedSize() const {
+    return _impl_._cached_size_.Get();
+  }
+
+  private:
+  void SharedCtor(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static void SharedDtor(MessageLite& self);
+  void InternalSwap(DeleteFriendRs* PROTOBUF_NONNULL other);
+ private:
+  template <typename T>
+  friend ::absl::string_view(::google::protobuf::internal::GetAnyMessageName)();
+  static ::absl::string_view FullMessageName() { return "im.proto.DeleteFriendRs"; }
+
+  explicit DeleteFriendRs(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  DeleteFriendRs(::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const DeleteFriendRs& from);
+  DeleteFriendRs(
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, DeleteFriendRs&& from) noexcept
+      : DeleteFriendRs(arena) {
+    *this = ::std::move(from);
+  }
+  const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL GetClassData() const PROTOBUF_FINAL;
+  static void* PROTOBUF_NONNULL PlacementNew_(
+      const void* PROTOBUF_NONNULL, void* PROTOBUF_NONNULL mem,
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static constexpr auto InternalNewImpl_();
+
+ public:
+  static constexpr auto InternalGenerateClassData_(
+      const MessageLite& prototype,
+      const ::google::protobuf::internal::TcParseTableBase* PROTOBUF_NULLABLE tc_table = nullptr);
+
+  [[nodiscard]] ::google::protobuf::Metadata GetMetadata() const;
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+  enum : int {
+    kDestnickFieldNumber = 3,
+    kMynickFieldNumber = 5,
+    kResultFieldNumber = 1,
+    kDestidFieldNumber = 2,
+    kMyidFieldNumber = 4,
+  };
+  // string destnick = 3;
+  void clear_destnick() ;
+  [[nodiscard]] const ::std::string& destnick() const;
+  template <typename Arg_ = const ::std::string&, typename... Args_>
+  void set_destnick(Arg_&& arg, Args_... args);
+  ::std::string* PROTOBUF_NONNULL mutable_destnick();
+  [[nodiscard]] ::std::string* PROTOBUF_NULLABLE release_destnick();
+  void set_allocated_destnick(::std::string* PROTOBUF_NULLABLE value);
+
+  private:
+  const ::std::string& _internal_destnick() const;
+  PROTOBUF_ALWAYS_INLINE void _internal_set_destnick(const ::std::string& value);
+  ::std::string* PROTOBUF_NONNULL _internal_mutable_destnick();
+
+  public:
+  // string mynick = 5;
+  void clear_mynick() ;
+  [[nodiscard]] const ::std::string& mynick() const;
+  template <typename Arg_ = const ::std::string&, typename... Args_>
+  void set_mynick(Arg_&& arg, Args_... args);
+  ::std::string* PROTOBUF_NONNULL mutable_mynick();
+  [[nodiscard]] ::std::string* PROTOBUF_NULLABLE release_mynick();
+  void set_allocated_mynick(::std::string* PROTOBUF_NULLABLE value);
+
+  private:
+  const ::std::string& _internal_mynick() const;
+  PROTOBUF_ALWAYS_INLINE void _internal_set_mynick(const ::std::string& value);
+  ::std::string* PROTOBUF_NONNULL _internal_mutable_mynick();
+
+  public:
+  // int32 result = 1;
+  void clear_result() ;
+  [[nodiscard]] ::int32_t result() const;
+  void set_result(::int32_t value);
+
+  private:
+  ::int32_t _internal_result() const;
+  void _internal_set_result(::int32_t value);
+
+  public:
+  // int32 destid = 2;
+  void clear_destid() ;
+  [[nodiscard]] ::int32_t destid() const;
+  void set_destid(::int32_t value);
+
+  private:
+  ::int32_t _internal_destid() const;
+  void _internal_set_destid(::int32_t value);
+
+  public:
+  // int32 myid = 4;
+  void clear_myid() ;
+  [[nodiscard]] ::int32_t myid() const;
+  void set_myid(::int32_t value);
+
+  private:
+  ::int32_t _internal_myid() const;
+  void _internal_set_myid(::int32_t value);
+
+  public:
+  // @@protoc_insertion_point(class_scope:im.proto.DeleteFriendRs)
+ private:
+  class _Internal;
+  using ParseTableT_ =
+      ::google::protobuf::internal::TcParseTable<3, 5,
+                          0, 46,
+                          2>;
+  static constexpr ParseTableT_ InternalGenerateParseTable_(
+      const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL class_data);
+  friend class ::google::protobuf::internal::TcParser;
+  #ifndef PROTOBUF_MESSAGE_GLOBALS
+  static const ParseTableT_ _table_;
+  #endif
+
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  friend ::google::protobuf::internal::PrivateAccess;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+    inline explicit constexpr Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                                    ::google::protobuf::internal::ConstantInitialized) noexcept;
+    inline explicit Impl_(
+        ::google::protobuf::internal::InternalVisibility visibility,
+        ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+    inline explicit Impl_(
+        ::google::protobuf::internal::InternalVisibility visibility,
+        ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const Impl_& from,
+        const DeleteFriendRs& from_msg);
+    ::google::protobuf::internal::HasBits<1> _has_bits_;
+    ::google::protobuf::internal::CachedSize _cached_size_;
+    ::google::protobuf::internal::ArenaStringPtr destnick_;
+    ::google::protobuf::internal::ArenaStringPtr mynick_;
+    ::int32_t result_;
+    ::int32_t destid_;
+    ::int32_t myid_;
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_im_2eproto;
+};
+// -------------------------------------------------------------------
+
+class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED DeleteFriendRq final : public ::google::protobuf::Message
+/* @@protoc_insertion_point(class_definition:im.proto.DeleteFriendRq) */ {
+ public:
+  inline DeleteFriendRq() : DeleteFriendRq(nullptr) {}
+  ~DeleteFriendRq() PROTOBUF_FINAL;
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  void operator delete(DeleteFriendRq* PROTOBUF_NONNULL msg, ::std::destroying_delete_t) {
+    SharedDtor(*msg);
+    ::google::protobuf::internal::SizedDelete(msg, sizeof(DeleteFriendRq));
+  }
+#endif
+
+  template <typename = void>
+  explicit constexpr DeleteFriendRq(::google::protobuf::internal::ConstantInitialized,
+                           const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL
+                               class_data);
+
+  inline DeleteFriendRq(const DeleteFriendRq& from) : DeleteFriendRq(nullptr, from) {}
+  inline DeleteFriendRq(DeleteFriendRq&& from) noexcept : DeleteFriendRq(nullptr, ::std::move(from)) {}
+  inline DeleteFriendRq& operator=(const DeleteFriendRq& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline DeleteFriendRq& operator=(DeleteFriendRq&& from) noexcept {
+    if (this == &from) return *this;
+    if (::google::protobuf::internal::CanMoveWithInternalSwap(GetArena(), from.GetArena())) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  [[nodiscard]] inline const ::google::protobuf::UnknownFieldSet& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance);
+  }
+  [[nodiscard]] inline ::google::protobuf::UnknownFieldSet* PROTOBUF_NONNULL
+  mutable_unknown_fields() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<::google::protobuf::UnknownFieldSet>();
+  }
+
+  [[nodiscard]] static const ::google::protobuf::Descriptor* PROTOBUF_NONNULL descriptor() {
+    return GetDescriptor();
+  }
+  [[nodiscard]] static const ::google::protobuf::Descriptor* PROTOBUF_NONNULL
+  GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  [[nodiscard]] static const ::google::protobuf::Reflection* PROTOBUF_NONNULL GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  [[nodiscard]] static const DeleteFriendRq& default_instance() {
+    return *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<DeleteFriendRq>(&DeleteFriendRq_globals_);
+  }
+  static constexpr int kIndexInFileMessages = 15;
+  friend void swap(DeleteFriendRq& a, DeleteFriendRq& b) { a.Swap(&b); }
+  inline void Swap(DeleteFriendRq* PROTOBUF_NONNULL other) {
+    if (other == this) return;
+    if (::google::protobuf::internal::CanUseInternalSwap(GetArena(), other->GetArena())) {
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(DeleteFriendRq* PROTOBUF_NONNULL other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  [[nodiscard]] DeleteFriendRq* PROTOBUF_NONNULL
+  New(::google::protobuf::Arena* PROTOBUF_NULLABLE arena = nullptr) const {
+    return ::google::protobuf::Message::DefaultConstruct<DeleteFriendRq>(arena);
+  }
+  using ::google::protobuf::Message::CopyFrom;
+  void CopyFrom(const DeleteFriendRq& from);
+  using ::google::protobuf::Message::MergeFrom;
+  void MergeFrom(const DeleteFriendRq& from) { DeleteFriendRq::MergeImpl(*this, from); }
+
+  private:
+  static void MergeImpl(::google::protobuf::MessageLite& to_msg,
+                        const ::google::protobuf::MessageLite& from_msg);
+
+  public:
+  [[nodiscard]] bool IsInitialized() const {
+    return true;
+  }
+  ABSL_ATTRIBUTE_REINITIALIZES void Clear() PROTOBUF_FINAL;
+  #if defined(PROTOBUF_CUSTOM_VTABLE)
+  private:
+  [[nodiscard]] static ::size_t ByteSizeLong(const ::google::protobuf::MessageLite& msg);
+  [[nodiscard]] static ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      const ::google::protobuf::MessageLite& msg, ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream);
+
+  public:
+  [[nodiscard]] ::size_t ByteSizeLong() const { return ByteSizeLong(*this); }
+  [[nodiscard]] ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const {
+    return _InternalSerialize(*this, target, stream);
+  }
+  #else   // PROTOBUF_CUSTOM_VTABLE
+  [[nodiscard]] ::size_t ByteSizeLong() const final;
+  [[nodiscard]] ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const final;
+  #endif  // PROTOBUF_CUSTOM_VTABLE
+  [[nodiscard]] int GetCachedSize() const {
+    return _impl_._cached_size_.Get();
+  }
+
+  private:
+  void SharedCtor(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static void SharedDtor(MessageLite& self);
+  void InternalSwap(DeleteFriendRq* PROTOBUF_NONNULL other);
+ private:
+  template <typename T>
+  friend ::absl::string_view(::google::protobuf::internal::GetAnyMessageName)();
+  static ::absl::string_view FullMessageName() { return "im.proto.DeleteFriendRq"; }
+
+  explicit DeleteFriendRq(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  DeleteFriendRq(::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const DeleteFriendRq& from);
+  DeleteFriendRq(
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, DeleteFriendRq&& from) noexcept
+      : DeleteFriendRq(arena) {
+    *this = ::std::move(from);
+  }
+  const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL GetClassData() const PROTOBUF_FINAL;
+  static void* PROTOBUF_NONNULL PlacementNew_(
+      const void* PROTOBUF_NONNULL, void* PROTOBUF_NONNULL mem,
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static constexpr auto InternalNewImpl_();
+
+ public:
+  static constexpr auto InternalGenerateClassData_(
+      const MessageLite& prototype,
+      const ::google::protobuf::internal::TcParseTableBase* PROTOBUF_NULLABLE tc_table = nullptr);
+
+  [[nodiscard]] ::google::protobuf::Metadata GetMetadata() const;
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+  enum : int {
+    kMyidFieldNumber = 1,
+    kFriidFieldNumber = 2,
+  };
+  // int32 myid = 1;
+  void clear_myid() ;
+  [[nodiscard]] ::int32_t myid() const;
+  void set_myid(::int32_t value);
+
+  private:
+  ::int32_t _internal_myid() const;
+  void _internal_set_myid(::int32_t value);
+
+  public:
+  // int32 friid = 2;
+  void clear_friid() ;
+  [[nodiscard]] ::int32_t friid() const;
+  void set_friid(::int32_t value);
+
+  private:
+  ::int32_t _internal_friid() const;
+  void _internal_set_friid(::int32_t value);
+
+  public:
+  // @@protoc_insertion_point(class_scope:im.proto.DeleteFriendRq)
+ private:
+  class _Internal;
+  using ParseTableT_ =
+      ::google::protobuf::internal::TcParseTable<1, 2,
+                          0, 0,
+                          2>;
+  static constexpr ParseTableT_ InternalGenerateParseTable_(
+      const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL class_data);
+  friend class ::google::protobuf::internal::TcParser;
+  #ifndef PROTOBUF_MESSAGE_GLOBALS
+  static const ParseTableT_ _table_;
+  #endif
+
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  friend ::google::protobuf::internal::PrivateAccess;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+    inline explicit constexpr Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                                    ::google::protobuf::internal::ConstantInitialized) noexcept;
+    inline explicit Impl_(
+        ::google::protobuf::internal::InternalVisibility visibility,
+        ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+    inline explicit Impl_(
+        ::google::protobuf::internal::InternalVisibility visibility,
+        ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const Impl_& from,
+        const DeleteFriendRq& from_msg);
+    ::google::protobuf::internal::HasBits<1> _has_bits_;
+    ::google::protobuf::internal::CachedSize _cached_size_;
+    ::int32_t myid_;
+    ::int32_t friid_;
     PROTOBUF_TSAN_DECLARE_MEMBER
   };
   union { Impl_ _impl_; };
@@ -4369,7 +4857,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED AiReplyRs final : public ::google::
   [[nodiscard]] static const AiReplyRs& default_instance() {
     return *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<AiReplyRs>(&AiReplyRs_globals_);
   }
-  static constexpr int kIndexInFileMessages = 21;
+  static constexpr int kIndexInFileMessages = 23;
   friend void swap(AiReplyRs& a, AiReplyRs& b) { a.Swap(&b); }
   inline void Swap(AiReplyRs* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -4669,7 +5157,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED AiReplyRq final : public ::google::
   [[nodiscard]] static const AiReplyRq& default_instance() {
     return *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<AiReplyRq>(&AiReplyRq_globals_);
   }
-  static constexpr int kIndexInFileMessages = 20;
+  static constexpr int kIndexInFileMessages = 22;
   friend void swap(AiReplyRq& a, AiReplyRq& b) { a.Swap(&b); }
   inline void Swap(AiReplyRq* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -4916,7 +5404,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED AiCancelRq final : public ::google:
   [[nodiscard]] static const AiCancelRq& default_instance() {
     return *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<AiCancelRq>(&AiCancelRq_globals_);
   }
-  static constexpr int kIndexInFileMessages = 22;
+  static constexpr int kIndexInFileMessages = 24;
   friend void swap(AiCancelRq& a, AiCancelRq& b) { a.Swap(&b); }
   inline void Swap(AiCancelRq* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -5616,7 +6104,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED RoamMsgRs final : public ::google::
   [[nodiscard]] static const RoamMsgRs& default_instance() {
     return *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<RoamMsgRs>(&RoamMsgRs_globals_);
   }
-  static constexpr int kIndexInFileMessages = 19;
+  static constexpr int kIndexInFileMessages = 21;
   friend void swap(RoamMsgRs& a, RoamMsgRs& b) { a.Swap(&b); }
   inline void Swap(RoamMsgRs* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -5864,7 +6352,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED RoamConvRs final : public ::google:
   [[nodiscard]] static const RoamConvRs& default_instance() {
     return *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<RoamConvRs>(&RoamConvRs_globals_);
   }
-  static constexpr int kIndexInFileMessages = 17;
+  static constexpr int kIndexInFileMessages = 19;
   friend void swap(RoamConvRs& a, RoamConvRs& b) { a.Swap(&b); }
   inline void Swap(RoamConvRs* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -9097,6 +9585,262 @@ inline void AddFriendRs::set_allocated_mynick(::std::string* PROTOBUF_NULLABLE v
     _impl_.mynick_.Set("", GetArena());
   }
   // @@protoc_insertion_point(field_set_allocated:im.proto.AddFriendRs.mynick)
+}
+
+// -------------------------------------------------------------------
+
+// DeleteFriendRq
+
+// int32 myid = 1;
+inline void DeleteFriendRq::clear_myid() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.myid_ = 0;
+  ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+}
+inline ::int32_t DeleteFriendRq::myid() const {
+  // @@protoc_insertion_point(field_get:im.proto.DeleteFriendRq.myid)
+  return _internal_myid();
+}
+inline void DeleteFriendRq::set_myid(::int32_t value) {
+  _internal_set_myid(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  // @@protoc_insertion_point(field_set:im.proto.DeleteFriendRq.myid)
+}
+inline ::int32_t DeleteFriendRq::_internal_myid() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.myid_;
+}
+inline void DeleteFriendRq::_internal_set_myid(::int32_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.myid_ = value;
+}
+
+// int32 friid = 2;
+inline void DeleteFriendRq::clear_friid() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.friid_ = 0;
+  ClearHasBit(_impl_._has_bits_[0], 0x00000002U);
+}
+inline ::int32_t DeleteFriendRq::friid() const {
+  // @@protoc_insertion_point(field_get:im.proto.DeleteFriendRq.friid)
+  return _internal_friid();
+}
+inline void DeleteFriendRq::set_friid(::int32_t value) {
+  _internal_set_friid(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  // @@protoc_insertion_point(field_set:im.proto.DeleteFriendRq.friid)
+}
+inline ::int32_t DeleteFriendRq::_internal_friid() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.friid_;
+}
+inline void DeleteFriendRq::_internal_set_friid(::int32_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.friid_ = value;
+}
+
+// -------------------------------------------------------------------
+
+// DeleteFriendRs
+
+// int32 result = 1;
+inline void DeleteFriendRs::clear_result() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.result_ = 0;
+  ClearHasBit(_impl_._has_bits_[0], 0x00000004U);
+}
+inline ::int32_t DeleteFriendRs::result() const {
+  // @@protoc_insertion_point(field_get:im.proto.DeleteFriendRs.result)
+  return _internal_result();
+}
+inline void DeleteFriendRs::set_result(::int32_t value) {
+  _internal_set_result(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000004U);
+  // @@protoc_insertion_point(field_set:im.proto.DeleteFriendRs.result)
+}
+inline ::int32_t DeleteFriendRs::_internal_result() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.result_;
+}
+inline void DeleteFriendRs::_internal_set_result(::int32_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.result_ = value;
+}
+
+// int32 destid = 2;
+inline void DeleteFriendRs::clear_destid() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.destid_ = 0;
+  ClearHasBit(_impl_._has_bits_[0], 0x00000008U);
+}
+inline ::int32_t DeleteFriendRs::destid() const {
+  // @@protoc_insertion_point(field_get:im.proto.DeleteFriendRs.destid)
+  return _internal_destid();
+}
+inline void DeleteFriendRs::set_destid(::int32_t value) {
+  _internal_set_destid(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000008U);
+  // @@protoc_insertion_point(field_set:im.proto.DeleteFriendRs.destid)
+}
+inline ::int32_t DeleteFriendRs::_internal_destid() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.destid_;
+}
+inline void DeleteFriendRs::_internal_set_destid(::int32_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.destid_ = value;
+}
+
+// string destnick = 3;
+inline void DeleteFriendRs::clear_destnick() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.destnick_.ClearToEmpty();
+  ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+}
+inline const ::std::string& DeleteFriendRs::destnick() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:im.proto.DeleteFriendRs.destnick)
+  return _internal_destnick();
+}
+template <typename Arg_, typename... Args_>
+PROTOBUF_ALWAYS_INLINE void DeleteFriendRs::set_destnick(Arg_&& arg, Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  _impl_.destnick_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:im.proto.DeleteFriendRs.destnick)
+}
+inline ::std::string* PROTOBUF_NONNULL DeleteFriendRs::mutable_destnick()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  ::std::string* _s = _internal_mutable_destnick();
+  // @@protoc_insertion_point(field_mutable:im.proto.DeleteFriendRs.destnick)
+  return _s;
+}
+inline const ::std::string& DeleteFriendRs::_internal_destnick() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.destnick_.Get();
+}
+inline void DeleteFriendRs::_internal_set_destnick(const ::std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.destnick_.Set(value, GetArena());
+}
+inline ::std::string* PROTOBUF_NONNULL DeleteFriendRs::_internal_mutable_destnick() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.destnick_.Mutable( GetArena());
+}
+inline ::std::string* PROTOBUF_NULLABLE DeleteFriendRs::release_destnick() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:im.proto.DeleteFriendRs.destnick)
+  if (!CheckHasBit(_impl_._has_bits_[0], 0x00000001U)) {
+    return nullptr;
+  }
+  ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+  auto* released = _impl_.destnick_.Release();
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString()) {
+    _impl_.destnick_.Set("", GetArena());
+  }
+  return released;
+}
+inline void DeleteFriendRs::set_allocated_destnick(::std::string* PROTOBUF_NULLABLE value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  if (value != nullptr) {
+    SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  } else {
+    ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+  }
+  _impl_.destnick_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.destnick_.IsDefault()) {
+    _impl_.destnick_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:im.proto.DeleteFriendRs.destnick)
+}
+
+// int32 myid = 4;
+inline void DeleteFriendRs::clear_myid() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.myid_ = 0;
+  ClearHasBit(_impl_._has_bits_[0], 0x00000010U);
+}
+inline ::int32_t DeleteFriendRs::myid() const {
+  // @@protoc_insertion_point(field_get:im.proto.DeleteFriendRs.myid)
+  return _internal_myid();
+}
+inline void DeleteFriendRs::set_myid(::int32_t value) {
+  _internal_set_myid(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000010U);
+  // @@protoc_insertion_point(field_set:im.proto.DeleteFriendRs.myid)
+}
+inline ::int32_t DeleteFriendRs::_internal_myid() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.myid_;
+}
+inline void DeleteFriendRs::_internal_set_myid(::int32_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.myid_ = value;
+}
+
+// string mynick = 5;
+inline void DeleteFriendRs::clear_mynick() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.mynick_.ClearToEmpty();
+  ClearHasBit(_impl_._has_bits_[0], 0x00000002U);
+}
+inline const ::std::string& DeleteFriendRs::mynick() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:im.proto.DeleteFriendRs.mynick)
+  return _internal_mynick();
+}
+template <typename Arg_, typename... Args_>
+PROTOBUF_ALWAYS_INLINE void DeleteFriendRs::set_mynick(Arg_&& arg, Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  _impl_.mynick_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:im.proto.DeleteFriendRs.mynick)
+}
+inline ::std::string* PROTOBUF_NONNULL DeleteFriendRs::mutable_mynick()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  ::std::string* _s = _internal_mutable_mynick();
+  // @@protoc_insertion_point(field_mutable:im.proto.DeleteFriendRs.mynick)
+  return _s;
+}
+inline const ::std::string& DeleteFriendRs::_internal_mynick() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.mynick_.Get();
+}
+inline void DeleteFriendRs::_internal_set_mynick(const ::std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.mynick_.Set(value, GetArena());
+}
+inline ::std::string* PROTOBUF_NONNULL DeleteFriendRs::_internal_mutable_mynick() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.mynick_.Mutable( GetArena());
+}
+inline ::std::string* PROTOBUF_NULLABLE DeleteFriendRs::release_mynick() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:im.proto.DeleteFriendRs.mynick)
+  if (!CheckHasBit(_impl_._has_bits_[0], 0x00000002U)) {
+    return nullptr;
+  }
+  ClearHasBit(_impl_._has_bits_[0], 0x00000002U);
+  auto* released = _impl_.mynick_.Release();
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString()) {
+    _impl_.mynick_.Set("", GetArena());
+  }
+  return released;
+}
+inline void DeleteFriendRs::set_allocated_mynick(::std::string* PROTOBUF_NULLABLE value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  if (value != nullptr) {
+    SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  } else {
+    ClearHasBit(_impl_._has_bits_[0], 0x00000002U);
+  }
+  _impl_.mynick_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.mynick_.IsDefault()) {
+    _impl_.mynick_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:im.proto.DeleteFriendRs.mynick)
 }
 
 // -------------------------------------------------------------------
