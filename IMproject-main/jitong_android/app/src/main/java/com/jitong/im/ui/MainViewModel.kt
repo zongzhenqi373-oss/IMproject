@@ -252,6 +252,15 @@ class MainViewModel : ViewModel() {
         _incomingFriendRequest.value = null
     }
 
+    /** 删除当前聊天对象；最终是否删除成功以服务端回执为准。 */
+    fun deleteCurrentFriend() {
+        val friendId = _chatPeer.value?.id ?: return
+        viewModelScope.launch {
+            runCatching { client.deleteFriend(friendId) }
+                .onFailure { notify("删除请求发送失败：${it.message ?: "连接异常"}") }
+        }
+    }
+
 
     /** 上拉加载更早历史：hasMore 且未在加载时才发请求（防抖，修复 6） */
     fun loadMoreHistory(peerId: Int) {
@@ -763,6 +772,22 @@ class MainViewModel : ViewModel() {
                         else -> "好友请求处理失败"
                     }
                     notify(msg)
+                }
+
+                is ImClient.Event.DeleteFriendResult -> {
+                    when (e.result) {
+                        Protocol.DELETE_FRIEND_SUCCESS,
+                        Protocol.DELETE_FRIEND_NOT_FRIEND -> {
+                            _friends.value = _friends.value.filterNot { it.id == e.friendId }
+                            if (_chatPeer.value?.id == e.friendId) {
+                                _chatPeer.value = null
+                                _screen.value = Screen.FriendList
+                            }
+                            notify(if (e.result == Protocol.DELETE_FRIEND_SUCCESS) "已删除好友" else "对方已不在好友列表")
+                        }
+                        Protocol.DELETE_FRIEND_DB_ERROR -> notify("删除失败，请稍后重试")
+                        else -> notify("删除好友请求无效")
+                    }
                 }
 
                 is ImClient.Event.RoamConversations -> {

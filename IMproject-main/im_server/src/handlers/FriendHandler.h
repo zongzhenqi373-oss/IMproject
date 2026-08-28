@@ -16,6 +16,7 @@ public:
     FriendHandler(Database& db, Presence& presence);
     void onAddFriend(const std::shared_ptr<Session>& session, const std::string& payload);
     void onAddFriendReply(const std::shared_ptr<Session>& session, const std::string& payload);
+    void onDeleteFriend(const std::shared_ptr<Session>& session, const std::string& payload);
 
 private:
     Database& m_db;

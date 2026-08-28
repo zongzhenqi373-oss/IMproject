@@ -80,6 +80,8 @@ public:
     bool isFriend(int idA, int idB);
     std::vector<FriendRecord> getFriends(int id);
     bool addFriendBidirectional(int idA, int idB);
+    //删除好友
+    bool removeFriendBidirectional(int idA, int idB);
     // 按昵称查用户 id（0=不存在）
     int getUserIdByNick(const std::string& nick);
 

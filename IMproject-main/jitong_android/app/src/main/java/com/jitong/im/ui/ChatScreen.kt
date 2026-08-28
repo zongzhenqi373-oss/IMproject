@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -113,9 +114,27 @@ fun ChatScreen(vm: MainViewModel) {
     var input by rememberSaveable { mutableStateOf("") }
     var showPanel by remember { mutableStateOf(false) }
     var showTopMenu by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
     val keyboard = LocalSoftwareKeyboardController.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("删除好友") },
+            text = { Text("确定删除 ${p.nick} 吗？聊天记录会保留。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    vm.deleteCurrentFriend()
+                }) { Text("删除", color = Color(0xFFD93025)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") }
+            },
+        )
+    }
 
     LaunchedEffect(jumpTarget, conv.size) {
         val msgId = jumpTarget ?: return@LaunchedEffect
@@ -195,7 +214,7 @@ fun ChatScreen(vm: MainViewModel) {
                                 leadingIcon = { Text("−", color = Color(0xFFD93025), fontSize = 20.sp) },
                                 onClick = {
                                     showTopMenu = false
-                                    vm.notify("删除好友功能将在下一步实现")
+                                    showDeleteConfirm = true
                                 },
                             )
                         }

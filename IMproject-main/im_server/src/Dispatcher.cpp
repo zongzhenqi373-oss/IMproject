@@ -47,6 +47,9 @@ Dispatcher::Dispatcher(Database& db, Presence& presence,
     m_router.add(DEF_PROT_ADD_FRIEND_RS,
         [this](const auto& s, const auto& p) { m_friend->onAddFriendReply(s, p); });
 
+    m_router.add(DEF_PROT_DELETE_FRIEND_RQ,
+        [this](const auto& s, const auto& p) { m_friend->onDeleteFriend(s, p); });
+
     m_router.add(DEF_PROT_ROAM_CONV_RQ,
         [this](const auto& s, const auto& p) { m_roam->onConversations(s, p); });
     m_router.add(DEF_PROT_ROAM_MSG_RQ,
@@ -56,6 +59,7 @@ Dispatcher::Dispatcher(Database& db, Presence& presence,
         [this](const auto& s, const auto& p) { m_system->onOffline(s, p); });
     m_router.add(DEF_PROT_HEARTBEAT_RQ,
         [this](const auto& s, const auto& p) { m_system->onHeartbeat(s, p); });
+
 }
 
 Dispatcher::~Dispatcher() = default;

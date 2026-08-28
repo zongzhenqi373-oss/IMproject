@@ -38,6 +38,8 @@ object Protocol {
     const val AI_REPLY_RQ       = DEF_BASE + 29
     const val AI_REPLY_RS       = DEF_BASE + 30
     const val AI_CANCEL_RQ      = DEF_BASE + 31
+    const val DELETE_FRIEND_RQ  = DEF_BASE + 32
+    const val DELETE_FRIEND_RS  = DEF_BASE + 33
 
 
     /** 单包最大长度（含 4B 协议号），防恶意超大包 OOM */
@@ -70,6 +72,12 @@ object Protocol {
     const val ADD_FRIEND_NOTEXIT = 3
     const val ADD_FRIEND_SELF = 4
     const val ADD_FRIEND_ALREADY = 5
+
+    const val DELETE_FRIEND_SUCCESS = 0
+    const val DELETE_FRIEND_DB_ERROR = 1
+    const val DELETE_FRIEND_NOT_FRIEND = 2
+    const val DELETE_FRIEND_INVALID = 3
+
 
     const val FILE_MAX_SIZE = 100L * 1024 * 1024
 }

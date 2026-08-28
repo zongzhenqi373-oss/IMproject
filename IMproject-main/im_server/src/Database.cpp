@@ -546,6 +546,46 @@ bool Database::addFriendBidirectional(int idA, int idB)
     });
 }
 
+//删除好友
+bool Database::removeFriendBidirectional(int idA, int idB)
+{
+    return m_writeQueue.submit([idA,idB](sqlite3* db) -> bool{
+        if(idA <= 0 || idB <= 0 || idA == idB){
+            return false;
+        }
+        //开启事务
+        if(sqlite3_exec(db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) != SQLITE_OK){
+            return false;
+        }
+        //回滚函数
+        auto rollback = [db] { sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);};
+        //删除双向好友关系
+        sqlite3_stmt* st = nullptr;
+        const char* sql = "DELETE FROM t_friend WHERE (idA=? AND idB=?) OR (idA=? AND idB=?);";
+        if(sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK){
+            rollback();
+            return false;
+        }
+        sqlite3_bind_int(st, 1, idA);
+        sqlite3_bind_int(st, 2, idB);
+        sqlite3_bind_int(st, 3, idB);
+        sqlite3_bind_int(st, 4, idA);
+        if(sqlite3_step(st) != SQLITE_DONE){
+            sqlite3_finalize(st);
+            rollback();
+            return false;
+        }
+        sqlite3_finalize(st);
+        //提交事务
+        if(sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr) != SQLITE_OK){
+            rollback();
+            return false;
+        }
+        return true;
+    });
+}
+
+//根据昵称获取用户id
 int Database::getUserIdByNick(const std::string& nick)
 {
     Conn& c = acquire();
@@ -560,6 +600,7 @@ int Database::getUserIdByNick(const std::string& nick)
     return id;
 }
 
+//保存消息
 bool Database::saveMessage(StoredMessage& m, bool delivered)
 {
     // 迁移到单写线程（DbWriteQueue）：任意时刻只可能有一个写操作在执行，
@@ -640,6 +681,7 @@ bool Database::saveMessage(StoredMessage& m, bool delivered)
     });
 }
 
+//拉取未送达消息
 std::vector<StoredMessage> Database::pullUndelivered(int receiverId)
 {
     std::vector<StoredMessage> out;
@@ -682,6 +724,7 @@ std::vector<StoredMessage> Database::pullUndelivered(int receiverId)
     return out;
 }
 
+//标记消息已送达
 void Database::markDelivered(const std::vector<std::string>& msgIds)
 {
     if (msgIds.empty()) return;
@@ -726,6 +769,7 @@ static StoredMessage readMessageRow(sqlite3_stmt* st)
     return m;
 }
 
+//漫游会话
 std::vector<StoredMessage> Database::roamConversations(int userId)
 {
     std::vector<StoredMessage> out;

@@ -88,4 +88,44 @@ void FriendHandler::onAddFriendReply(const std::shared_ptr<Session>& session,
     }
 }
 
+void FriendHandler::onDeleteFriend(const std::shared_ptr<Session> &session, const std::string &payload)
+{
+    DeleteFriendRq rq;
+    if(!handlers::parsePayload(payload, rq)){
+        return;
+    }
+    const int userId = session->userId();
+    const int friendId = rq.friend_id();
+
+    DeleteFriendRs rs;
+    rs.set_friend_id(friendId);
+    if (userId <= 0 || friendId <= 0 || userId == friendId) {
+        rs.set_result(DELETE_FRIEND_INVALID);
+        session->deliver(DEF_PROT_DELETE_FRIEND_RS, rs.SerializeAsString());
+        return;
+    }
+    if(!m_db.isFriend(userId, friendId)) {
+        rs.set_result(DELETE_FRIEND_NOT_FRIEND);
+        session->deliver(DEF_PROT_DELETE_FRIEND_RS, rs.SerializeAsString());
+        return;
+    }
+    if(!m_db.removeFriendBidirectional(userId, friendId)) {
+        rs.set_result(DELETE_FRIEND_DB_ERROR);
+        session->deliver(DEF_PROT_DELETE_FRIEND_RS, rs.SerializeAsString());
+        return;
+    }
+    rs.set_result(DELETE_FRIEND_SUCCESS);
+    session->deliver(DEF_PROT_DELETE_FRIEND_RS, rs.SerializeAsString());
+
+    //对方在线也要立即从其好友列表移除当前用户
+    if(auto friendSession = m_presence.get(friendId)) {
+        DeleteFriendRs rs_notice;
+        rs_notice.set_friend_id(userId);
+        rs_notice.set_result(DELETE_FRIEND_SUCCESS);
+        friendSession->deliver(DEF_PROT_DELETE_FRIEND_RS, rs_notice.SerializeAsString());
+    }
+    
+    log("[好友] 删除 user=", userId, " friend=", friendId);
+}
+
 } // namespace imsrv

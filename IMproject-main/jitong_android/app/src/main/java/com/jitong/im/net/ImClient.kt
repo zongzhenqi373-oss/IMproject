@@ -64,6 +64,8 @@ class ImClient {
         /** 好友添加回执：result=添加结果，peerId=被添加人的id，peerNick=被添加人的nick*/
         data class AddFriendResult(val result: Int, val peerId: Int, val peerNick: String) : Event
 
+        data class DeleteFriendResult(val result: Int, val friendId: Int) : Event
+
 
         /** 漫游消息条目（会话列表末条 / 历史分页共用）。图片 bytes 为空表示预览占位（不落消息表）。 */
         data class RoamItem(
@@ -283,6 +285,15 @@ class ImClient {
         send(Protocol.ADD_FRIEND_RS, rs.toByteArray())
     }
 
+    /**发送删除好友请求*/
+    suspend fun deleteFriend(friendId: Int){
+        val rq = Im.DeleteFriendRq.newBuilder()
+            .setFriendId(friendId)
+            .build()
+
+        send(Protocol.DELETE_FRIEND_RQ,rq.toByteArray())
+    }
+
     /** HTTPS 上传完成后，经 IM 长连接发送媒体卡片元数据。 */
     suspend fun sendMediaCard(
         friId: Int, fileId: String, fileName: String, size: Long,
@@ -491,6 +502,13 @@ class ImClient {
                 val rs = Im.AddFriendRs.parseFrom(f.payload)
                 //回执中应该传的是被添加方id和被添加方nick，以及结果，回执中myid就是被添加方的id，mynick就是被添加方的nick
                 _events.emit(Event.AddFriendResult(rs.result,rs.myid,rs.mynick))
+            }
+
+            /**删除好友*/
+            Protocol.DELETE_FRIEND_RS -> {
+                val rs = Im.DeleteFriendRs.parseFrom(f.payload)
+
+                _events.emit(Event.DeleteFriendResult(rs.result, rs.friendId))
             }
 
             Protocol.ROAM_CONV_RS -> {
