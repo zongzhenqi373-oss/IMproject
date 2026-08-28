@@ -93,6 +93,8 @@ class MainViewModel : ViewModel() {
     /**添加好友*/
     private val _friendRequests = MutableStateFlow<List<ImClient.Event.FriendRequestItem>>(emptyList())
     val friendRequests: StateFlow<List<ImClient.Event.FriendRequestItem>> = _friendRequests
+    // 兼容尚未携带 operator_id 的旧服务端：记录本机刚发起删除的目标。
+    private var pendingDeleteFriendId: Int? = null
 
     /** 会话消息：peerId -> 有序消息列表（登录后从 Room 装载，运行期内存驻留） */
     private val _messages = MutableStateFlow<Map<Int, List<ChatMessage>>>(emptyMap())
@@ -262,9 +264,13 @@ class MainViewModel : ViewModel() {
     /** 删除当前聊天对象；最终是否删除成功以服务端回执为准。 */
     fun deleteCurrentFriend() {
         val friendId = _chatPeer.value?.id ?: return
+        pendingDeleteFriendId = friendId
         viewModelScope.launch {
             runCatching { client.deleteFriend(friendId) }
-                .onFailure { notify("删除请求发送失败：${it.message ?: "连接异常"}") }
+                .onFailure {
+                    pendingDeleteFriendId = null
+                    notify("删除请求发送失败：${it.message ?: "连接异常"}")
+                }
         }
     }
 
@@ -656,6 +662,7 @@ class MainViewModel : ViewModel() {
                         }
                         // 消息漫游：登录后拉每会话最后一条恢复会话列表预览（换设备/重装后本地库空时尤为关键）
                         viewModelScope.launch { client.roamConversations() }
+                        loadFriendRequests()
                     }
                     Protocol.LOGIN_NOTEXIT -> _loginTip.value = "登录失败：用户不存在"
                     else -> _loginTip.value = "登录失败：密码错误"
@@ -794,8 +801,37 @@ class MainViewModel : ViewModel() {
 
                 is ImClient.Event.DeleteFriendResult -> {
                     when (e.result) {
-                        Protocol.DELETE_FRIEND_SUCCESS,
+                        Protocol.DELETE_FRIEND_SUCCESS -> {
+                            val operatorNick = e.operatorNick // 或者 e.nick
+                                ?: _friends.value.firstOrNull { it.id == e.operatorId }?.nick // 如果服务端可能为空，可以保留本地查找作为备用方案
+                                ?: ""
+                            val deletedByMe = e.operatorId == client.myId ||
+                                (e.operatorId == 0 && pendingDeleteFriendId == e.friendId)
+                            if (pendingDeleteFriendId == e.friendId) pendingDeleteFriendId = null
+                            android.util.Log.d(
+                                "IM_FRIEND",
+                                "delete result myId=${client.myId} friendId=${e.friendId} " +
+                                    "operatorId=${e.operatorId} deletedByMe=$deletedByMe",
+                            )
+                            _friends.value = _friends.value.filterNot {
+                                it.id == e.friendId
+                            }
+                            if (_chatPeer.value?.id == e.friendId) {
+                                _chatPeer.value = null
+                                _screen.value = Screen.FriendList
+                            }
+                            notify(
+                                if (deletedByMe) {
+                                    "已删除好友"
+                                } else if (operatorNick.isNotBlank()) {
+                                    "你已被 $operatorNick 删除"
+                                } else {
+                                    "你已被对方删除"
+                                }
+                            )
+                        }
                         Protocol.DELETE_FRIEND_NOT_FRIEND -> {
+                            if (pendingDeleteFriendId == e.friendId) pendingDeleteFriendId = null
                             _friends.value = _friends.value.filterNot { it.id == e.friendId }
                             if (_chatPeer.value?.id == e.friendId) {
                                 _chatPeer.value = null
@@ -1159,6 +1195,7 @@ class MainViewModel : ViewModel() {
         roamLoading.clear()
         _friends.value = emptyList()
         _friendRequests.value = emptyList()
+        pendingDeleteFriendId = null
         _messages.value = emptyMap()
         _conversations.value = emptyMap()
         _searchResults.value = emptyList()

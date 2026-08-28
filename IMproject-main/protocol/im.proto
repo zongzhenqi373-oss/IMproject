@@ -166,6 +166,8 @@ message DeleteFriendRq {
 message DeleteFriendRs {
   int32 result = 1;
   int32 friend_id = 2; // 当前客户端应从好友列表移除的用户 id
+  int32 operator_id = 3;       // 发出请求的用户id
+  string operator_nick = 4;
 }
 
 

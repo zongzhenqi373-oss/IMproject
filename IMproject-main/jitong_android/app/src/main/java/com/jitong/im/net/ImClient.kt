@@ -73,7 +73,7 @@ class ImClient {
         )
         data class FriendRequestsLoaded(val requests: List<FriendRequestItem>) : Event
 
-        data class DeleteFriendResult(val result: Int, val friendId: Int) : Event
+        data class DeleteFriendResult(val result: Int, val friendId: Int, val operatorId: Int, val operatorNick: String) : Event
 
 
         /** 漫游消息条目（会话列表末条 / 历史分页共用）。图片 bytes 为空表示预览占位（不落消息表）。 */
@@ -537,7 +537,7 @@ class ImClient {
             Protocol.DELETE_FRIEND_RS -> {
                 val rs = Im.DeleteFriendRs.parseFrom(f.payload)
 
-                _events.emit(Event.DeleteFriendResult(rs.result, rs.friendId))
+                _events.emit(Event.DeleteFriendResult(rs.result, rs.friendId, rs.operatorId, rs.operatorNick))
             }
 
             Protocol.ROAM_CONV_RS -> {

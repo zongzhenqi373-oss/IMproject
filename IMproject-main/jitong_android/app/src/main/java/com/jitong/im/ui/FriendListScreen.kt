@@ -39,6 +39,7 @@ fun FriendListScreen(vm: MainViewModel) {
     val conversations by vm.conversations.collectAsStateWithLifecycle()
     val results by vm.searchResults.collectAsStateWithLifecycle()
     val friendRequests by vm.friendRequests.collectAsStateWithLifecycle()
+    val incomingRequestCount = friendRequests.count{ it.targetId == vm.myId }
     var tab by rememberSaveable { mutableStateOf(HomeTab.Messages) }
     var query by rememberSaveable { mutableStateOf("") }
     var showAddFriend by remember { mutableStateOf(false) }
@@ -60,6 +61,7 @@ fun FriendListScreen(vm: MainViewModel) {
                 )
                 HomeTab.Contacts -> ContactsTab(
                     friends = friends,
+                    requestCount = incomingRequestCount,
                     onOpen = vm::openChat,
                     onAddFriend = { showAddFriend = true },
                     onNewFriends = {
@@ -131,7 +133,7 @@ private fun MessagesTab(
 
 @Composable
 private fun ContactsTab(
-    friends: List<Friend>, onOpen: (Friend) -> Unit, onAddFriend: () -> Unit,
+    friends: List<Friend>, requestCount: Int, onOpen: (Friend) -> Unit, onAddFriend: () -> Unit,
     onNewFriends: () -> Unit, onGroup: () -> Unit,
 ) {
     HomeHeader("联系人", onAddFriend)
@@ -141,9 +143,9 @@ private fun ContactsTab(
         item {
             Surface(shape = RoundedCornerShape(16.dp)) {
                 Column {
-                    ContactAction("＋", "新的朋友", "好友申请") { onNewFriends() }
+                    ContactAction("＋", "新的朋友", "好友申请", badgeCount = requestCount, onClick = onNewFriends)
                     HorizontalDivider(Modifier.padding(start = 70.dp), color = Color(0xFFEDF0F5))
-                    ContactAction("♟", "群聊", "创建和管理群聊") { onGroup() }
+                    ContactAction("♟", "群聊", "创建和管理群聊", onClick = onGroup)
                 }
             }
         }
@@ -253,11 +255,16 @@ private fun MeTab(id: Int, nick: String, feeling: String, notify: (String) -> Un
     Box { Avatar(friend.id, friend.nick, size); if (friend.online) Box(Modifier.size(12.dp).align(Alignment.BottomEnd).background(Color.White, CircleShape).padding(2.dp).background(JitongBlue, CircleShape)) }
 }
 
-@Composable private fun ContactAction(icon: String, title: String, subtitle: String, onClick: () -> Unit) {
+@Composable private fun ContactAction(icon: String, title: String, subtitle: String, onClick: () -> Unit, badgeCount: Int = 0) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(42.dp).background(PaleBlue, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) { Text(icon, color = JitongBlue, fontSize = 21.sp) }
-        Spacer(Modifier.width(12.dp)); Column { Text(title, fontWeight = FontWeight.SemiBold); Text(subtitle, color = SecondaryText, fontSize = 12.sp) }
-        Spacer(Modifier.weight(1f)); Text("›", color = SecondaryText, fontSize = 22.sp)
+        Spacer(Modifier.width(12.dp));
+        Column(Modifier.weight(1f)) { Text(title, fontWeight = FontWeight.SemiBold); Text(subtitle, color = SecondaryText, fontSize = 12.sp) }
+        if (badgeCount > 0) {
+            Badge(containerColor = Color(0xFFF04444)) { Text(if (badgeCount > 99) "99+" else badgeCount.toString()) }
+        } else {
+            Text("›", color = SecondaryText, fontSize = 22.sp)
+        }
     }
 }
 

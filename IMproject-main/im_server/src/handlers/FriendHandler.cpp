@@ -1,5 +1,7 @@
 #include "handlers/FriendHandler.h"
 
+#include <string>
+
 #include "Database.h"
 #include "Log.h"
 #include "Presence.h"
@@ -115,9 +117,13 @@ void FriendHandler::onDeleteFriend(const std::shared_ptr<Session> &session, cons
     }
     const int userId = session->userId();
     const int friendId = rq.friend_id();
+    const std::string nick = m_db.getUserNickById(userId);
 
     DeleteFriendRs rs;
+    rs.set_operator_nick(nick);
+    rs.set_operator_id(userId);
     rs.set_friend_id(friendId);
+    
     if (userId <= 0 || friendId <= 0 || userId == friendId) {
         rs.set_result(DELETE_FRIEND_INVALID);
         session->deliver(DEF_PROT_DELETE_FRIEND_RS, rs.SerializeAsString());
@@ -140,6 +146,8 @@ void FriendHandler::onDeleteFriend(const std::shared_ptr<Session> &session, cons
     if(auto friendSession = m_presence.get(friendId)) {
         DeleteFriendRs rs_notice;
         rs_notice.set_friend_id(userId);
+        rs_notice.set_operator_id(userId);
+        rs_notice.set_operator_nick(nick);
         rs_notice.set_result(DELETE_FRIEND_SUCCESS);
         friendSession->deliver(DEF_PROT_DELETE_FRIEND_RS, rs_notice.SerializeAsString());
     }

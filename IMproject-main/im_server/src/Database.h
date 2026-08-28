@@ -95,6 +95,8 @@ public:
     bool removeFriendBidirectional(int idA, int idB);
     // 按昵称查用户 id（0=不存在）
     int getUserIdByNick(const std::string& nick);
+    //根据用户id取出用户昵称
+    std::string getUserNickById(int id);
 
     // ---------------- 消息（漫游/离线单表） ----------------
     // 保存消息；conversation_id 由收发双方 id 生成（min*K+max，双向同值）。

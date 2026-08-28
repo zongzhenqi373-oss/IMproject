@@ -712,12 +712,30 @@ int Database::getUserIdByNick(const std::string& nick)
     std::lock_guard<std::mutex> lock(c.mtx);
 
     sqlite3_stmt* st = nullptr;
-    sqlite3_prepare_v2(c.db, "SELECT id FROM t_user WHERE name=?;", -1, &st, nullptr);
+    if(sqlite3_prepare_v2(c.db, "SELECT id FROM t_user WHERE name=?;", -1, &st, nullptr) != SQLITE_OK){
+        return 0;
+    }
     sqlite3_bind_text(st, 1, nick.c_str(), -1, SQLITE_TRANSIENT);
     int id = 0;
     if (sqlite3_step(st) == SQLITE_ROW) id = sqlite3_column_int(st, 0);
     sqlite3_finalize(st);
     return id;
+}
+
+std::string Database::getUserNickById(int id)
+{
+    std::vector<UserRecord> users;
+    if(!getUser(id, users.emplace_back())){
+        return "";
+    }
+
+    std::string nick;
+    
+    if(!users.empty()){
+        nick = users[0].nick;
+    }
+
+    return nick;
 }
 
 //保存消息
