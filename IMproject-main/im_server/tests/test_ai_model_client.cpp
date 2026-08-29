@@ -6,6 +6,7 @@
 #include "im.pb.h"
 
 #include <cassert>
+#include <cstdlib>
 #include <iostream>
 
 namespace {
@@ -23,6 +24,32 @@ public:
 } // namespace
 
 int main() {
+    {
+        // IM 服务端只能读取 IM_AI_*；本机 Claude 的 ANTHROPIC_* 不得串入服务端。
+#if defined(_WIN32)
+        _putenv_s("ANTHROPIC_BASE_URL", "https://claude-proxy.invalid");
+        _putenv_s("ANTHROPIC_AUTH_TOKEN", "claude-secret");
+        _putenv_s("ANTHROPIC_MODEL", "claude-model");
+        _putenv_s("IM_AI_PROVIDER", "anthropic");
+        _putenv_s("IM_AI_BASE_URL", "https://im-ai.example/apps/anthropic");
+        _putenv_s("IM_AI_API_KEY", "im-secret");
+        _putenv_s("IM_AI_MODEL", "im-model");
+#else
+        setenv("ANTHROPIC_BASE_URL", "https://claude-proxy.invalid", 1);
+        setenv("ANTHROPIC_AUTH_TOKEN", "claude-secret", 1);
+        setenv("ANTHROPIC_MODEL", "claude-model", 1);
+        setenv("IM_AI_PROVIDER", "anthropic", 1);
+        setenv("IM_AI_BASE_URL", "https://im-ai.example/apps/anthropic", 1);
+        setenv("IM_AI_API_KEY", "im-secret", 1);
+        setenv("IM_AI_MODEL", "im-model", 1);
+#endif
+        const auto isolated = imsrv::ai::AiConfig::fromEnvironment();
+        assert(isolated.provider == imsrv::ai::AiProvider::Anthropic);
+        assert(isolated.host == "im-ai.example");
+        assert(isolated.apiKey == "im-secret");
+        assert(isolated.model == "im-model");
+    }
+
     {
         im::proto::AiReplyRq request;
         request.set_request_id("ai-request-1");
